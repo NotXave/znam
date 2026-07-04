@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Builds the compact per-language data artifacts the extension downloads:
-//   data/<lang>.lemmas.tsv  form \t lemma   (trimmed to forms of the top-N lemmas)
-//   data/<lang>.freq.tsv    lemma \t rank   (frequency merged by lemma)
+// Builds the compact per-language data artifacts bundled with the extension:
+//   public/data/<lang>.lemmas.tsv  form \t lemma   (trimmed to forms of the top-N lemmas)
+//   public/data/<lang>.freq.tsv    lemma \t rank   (frequency merged by lemma)
 //
 // Sources:
 //   - Polish lemma data: spaCy lookups (PoliMorf-derived, BSD) — the michmech
@@ -15,7 +15,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data')
+const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'data')
 
 const SPACY_BASE =
   'https://raw.githubusercontent.com/explosion/spacy-lookups-data/master/spacy_lookups_data/data'

@@ -11,9 +11,10 @@ import {
 } from './db'
 import { invalidateLemmaCache, lemmatizeBatch } from './lemmatizer'
 
-// Language-data artifacts are built offline by scripts/build-lang-data.mjs
-// and committed to the repo (see data/README.md).
-const DATA_BASE = 'https://raw.githubusercontent.com/NotXave/znam/master/data'
+// Language-data artifacts are built offline by scripts/build-lang-data.mjs.
+// pl/de/en ship inside the extension (public/data/); anything else is
+// fetched from the repo.
+const DATA_BASE = 'https://raw.githubusercontent.com/NotXave/znam/master/public/data'
 
 const INSERT_BATCH = 5000
 
@@ -86,6 +87,26 @@ async function fetchWithProgress(
     off += c.length
   }
   return new TextDecoder('utf-8').decode(buf)
+}
+
+/** Bundled artifact if the extension ships one, otherwise the repo download. */
+async function loadArtifact(
+  lang: string,
+  kind: 'lemmas' | 'freq',
+  label: string,
+  post: (e: SetupEvent) => void,
+): Promise<string> {
+  try {
+    // Cast: WXT types getURL against literal public paths, ours is dynamic
+    const resp = await fetch(browser.runtime.getURL(`/data/${lang}.${kind}.tsv` as any))
+    if (resp.ok) {
+      post({ type: 'PROGRESS', step: 'download', pct: 100, detail: `${label} (bundled)` })
+      return await resp.text()
+    }
+  } catch {
+    // not bundled for this language
+  }
+  return fetchWithProgress(`${DATA_BASE}/${lang}.${kind}.tsv`, label, post)
 }
 
 async function installLanguageData(
@@ -166,8 +187,8 @@ export function handleSetupPort(port: any, onInstalled?: (lang: string) => void)
   port.onMessage.addListener(async (msg: SetupRequest) => {
     try {
       if (msg.type === 'SETUP_LANGUAGE') {
-        const lemmasTsv = await fetchWithProgress(`${DATA_BASE}/${msg.lang}.lemmas.tsv`, 'Lemma dictionary', post)
-        const freqTsv = await fetchWithProgress(`${DATA_BASE}/${msg.lang}.freq.tsv`, 'Frequency list', post)
+        const lemmasTsv = await loadArtifact(msg.lang, 'lemmas', 'Lemma dictionary', post)
+        const freqTsv = await loadArtifact(msg.lang, 'freq', 'Frequency list', post)
         await installLanguageData(msg.lang, lemmasTsv, freqTsv, post)
         onInstalled?.(msg.lang)
         post({ type: 'DONE', state: await languageState(msg.lang) })

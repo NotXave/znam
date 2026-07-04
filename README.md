@@ -49,13 +49,14 @@ npm run build          # → .output/firefox-mv2
 Load in Firefox via `about:debugging` → *This Firefox* → *Load Temporary
 Add-on* → pick `.output/firefox-mv2/manifest.json`.
 
-Then open the popup → *Open library & words* → **Languages** → *Download &
-install* for your target language.
+Then open the popup → *Open library & words* → **Languages** → *Install* for
+your target language.
 
 ## Language data
 
-The extension downloads two compact artifacts per language from this repo's
-`data/` directory (or install them from local files in the Languages tab):
+Two compact artifacts per language live in `public/data/` — Polish, German
+and English are bundled with the extension; other languages are fetched from
+this repo (or installed from local files in the Languages tab):
 
 | file | content |
 |---|---|
