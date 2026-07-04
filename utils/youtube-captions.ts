@@ -7,23 +7,21 @@ export interface CaptionTrack {
   name: string
 }
 
-/**
- * Extract ytInitialPlayerResponse from watch-page HTML. Fetching the HTML
- * (rather than reading DOM script tags) also works after SPA navigation,
- * where the inline scripts still describe the first-loaded video.
- */
-export function extractPlayerResponse(html: string): any {
-  const m = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});(?:\s*var\b|\s*<\/script>)/s)
-  if (!m) return null
-  try {
-    return JSON.parse(m[1])
-  } catch {
-    return null
-  }
+export interface VideoInfo {
+  title: string
+  tracks: CaptionTrack[]
 }
 
-export function listCaptionTracks(playerResponse: any): CaptionTrack[] {
-  const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks
+// The WEB client's timedtext URLs return empty bodies without a
+// proof-of-origin token (verified 2026-07). The ANDROID/IOS InnerTube
+// clients still hand out caption URLs that work as-is.
+const INNERTUBE_CLIENTS = [
+  { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30 },
+  { clientName: 'IOS', clientVersion: '20.10.4', deviceModel: 'iPhone16,2' },
+]
+
+function parseTracks(data: any): CaptionTrack[] {
+  const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks
   if (!Array.isArray(tracks)) return []
   return tracks.map((t: any) => ({
     languageCode: t.languageCode || '',
@@ -31,6 +29,35 @@ export function listCaptionTracks(playerResponse: any): CaptionTrack[] {
     isAsr: t.kind === 'asr',
     name: t.name?.simpleText || t.name?.runs?.[0]?.text || t.languageCode || '',
   }))
+}
+
+/** Title + caption tracks via the InnerTube player API. */
+export async function fetchVideoInfo(videoId: string): Promise<VideoInfo> {
+  let lastError = 'no client succeeded'
+  for (const client of INNERTUBE_CLIENTS) {
+    try {
+      const resp = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'omit',
+        body: JSON.stringify({ context: { client: { hl: 'en', ...client } }, videoId }),
+      })
+      if (!resp.ok) {
+        lastError = `player API HTTP ${resp.status}`
+        continue
+      }
+      const data = await resp.json()
+      const status = data?.playabilityStatus?.status
+      const tracks = parseTracks(data)
+      if (tracks.length > 0 || status === 'OK') {
+        return { title: data?.videoDetails?.title || '', tracks }
+      }
+      lastError = `playability ${status}`
+    } catch (e: any) {
+      lastError = e.message || String(e)
+    }
+  }
+  throw new Error(lastError)
 }
 
 /** Track for the target language; manual subtitles beat auto-generated. */
@@ -49,7 +76,7 @@ export async function fetchCaptionText(baseUrl: string): Promise<string> {
   const resp = await fetch(url, { credentials: 'omit' })
   if (!resp.ok) throw new Error(`timedtext HTTP ${resp.status}`)
   const text = await resp.text()
-  if (!text.trim()) throw new Error('timedtext empty') // pot-token wall returns 200 + empty body
+  if (!text.trim()) throw new Error('timedtext empty (blocked)')
   const cues = parseYouTubeJson3(JSON.parse(text))
   return cues.map(c => c.text).join(' ')
 }

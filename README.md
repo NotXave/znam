@@ -79,10 +79,11 @@ Languages without lemma data still work — forms are then tracked literally.
 
 - Polish aspect pairs are separate lemmas (*robić* vs *zrobić*) — knowing one
   does not mark the other.
-- Scoring YouTube **search results** fetches subtitles from the extension
-  background, which YouTube sometimes blocks (proof-of-origin token); those
-  videos show *n/a*. Watch-page scoring runs in the page context and is
-  reliable.
+- YouTube subtitles are fetched via the InnerTube player API with an
+  ANDROID/IOS client identity, because WEB-client timedtext URLs return empty
+  bodies without a proof-of-origin token. If YouTube retires those client
+  versions, bump them in `utils/youtube-captions.ts`. Videos without subtitles
+  in your target language show *no subs* / *n/a*.
 - The reader is toggle-per-page by design; heavy web apps are not good
   wrapping targets. Use the popup's "Always on" for your regular reading
   sites.

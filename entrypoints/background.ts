@@ -20,12 +20,7 @@ import { calibrationLemmas, calibrationSample, estimateKnownRank } from '../util
 import { getVideoScores, putVideoScore } from '../utils/db'
 import { scoreTokens } from '../utils/scoring'
 import { tokenize } from '../utils/tokenizer'
-import {
-  extractPlayerResponse,
-  fetchCaptionText,
-  listCaptionTracks,
-  pickTrack,
-} from '../utils/youtube-captions'
+import { fetchCaptionText, fetchVideoInfo, pickTrack } from '../utils/youtube-captions'
 import type { LibraryEntry } from '../utils/types'
 
 function urlId(url: string): string {
@@ -126,16 +121,10 @@ async function markPageRead(lang: string, lemmas: string[]): Promise<{ promoted:
 
 const VIDEO_CACHE_TTL = 7 * 24 * 3600 * 1000
 
-/**
- * Background-context caption fetches can hit YouTube's proof-of-origin wall
- * (empty timedtext) — those videos degrade to null ("n/a").
- */
 async function scoreVideo(videoId: string, lang: string): Promise<number | null> {
   try {
-    const resp = await fetch(`https://www.youtube.com/watch?v=${videoId}`, { credentials: 'omit' })
-    if (!resp.ok) return null
-    const player = extractPlayerResponse(await resp.text())
-    const track = pickTrack(listCaptionTracks(player), lang)
+    const video = await fetchVideoInfo(videoId)
+    const track = pickTrack(video.tracks, lang)
     if (!track) return null
     const text = await fetchCaptionText(track.baseUrl)
     const tokens = tokenize(text)
