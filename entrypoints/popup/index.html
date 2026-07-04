@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>znam</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <h1>znam</h1>
+
+    <button id="toggle" class="primary">Activate reader on this page</button>
+    <label class="row checkbox">
+      <input type="checkbox" id="auto-host" />
+      <span>Always on for <span id="hostname">this site</span></span>
+    </label>
+
+    <div class="row">
+      <label for="target-lang">I'm learning</label>
+      <select id="target-lang"></select>
+    </div>
+    <div class="row">
+      <label for="native-lang">Translate to</label>
+      <select id="native-lang"></select>
+    </div>
+    <div class="row">
+      <label for="primary-translation">Primary source</label>
+      <select id="primary-translation">
+        <option value="google">Google Translate</option>
+        <option value="reverso">Reverso Context</option>
+      </select>
+    </div>
+
+    <div id="lang-state" class="state"></div>
+
+    <button id="open-app">Open library &amp; words</button>
+
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>znam — library &amp; words</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>znam</h1>
+      <nav>
+        <button data-tab="library" class="active">Library</button>
+        <button data-tab="words">Words</button>
+        <button data-tab="languages">Languages</button>
+        <button data-tab="import">Import</button>
+        <button data-tab="calibrate">Calibrate</button>
+      </nav>
+      <select id="lang-select" title="Language"></select>
+    </header>
+
+    <main>
+      <section id="tab-library" class="tab active">
+        <div class="toolbar">
+          <label><input type="checkbox" id="lib-pinned-only" /> Pinned only</label>
+          <select id="lib-sort">
+            <option value="score-desc">Most comprehensible first</option>
+            <option value="score-asc">Hardest first</option>
+            <option value="sweet">Sweet spot first (90–98%)</option>
+            <option value="date">Recently visited</option>
+          </select>
+        </div>
+        <div id="library-list" class="list"></div>
+      </section>
+
+      <section id="tab-words" class="tab">
+        <div class="toolbar">
+          <input type="search" id="word-search" placeholder="Search…" />
+          <select id="word-filter">
+            <option value="">All statuses</option>
+            <option value="learning">Learning</option>
+            <option value="known">Known</option>
+            <option value="ignored">Ignored</option>
+          </select>
+          <button id="export-csv">Export CSV</button>
+          <button id="export-anki">Export Anki</button>
+        </div>
+        <div id="word-count" class="hint"></div>
+        <div id="word-list" class="list"></div>
+      </section>
+
+      <section id="tab-languages" class="tab">
+        <div id="lang-state" class="card"></div>
+        <div class="card">
+          <h2>Install language data</h2>
+          <p class="hint">
+            Downloads the lemma dictionary and frequency list for the selected
+            language (built from PoliMorf / lemmatization-lists / OpenSubtitles;
+            a few MB, one time). Without it, word forms are tracked literally
+            and inflections of the same word count separately.
+          </p>
+          <button id="setup-download" class="primary">Download &amp; install</button>
+          <div id="setup-progress" class="progress" hidden>
+            <div id="setup-bar"></div>
+            <span id="setup-detail"></span>
+          </div>
+          <details>
+            <summary>Install from local files instead</summary>
+            <p class="hint">Pick the two TSV artifacts built by <code>scripts/build-lang-data.mjs</code>.</p>
+            <label>Lemmas TSV <input type="file" id="local-lemmas" accept=".tsv,.txt" /></label>
+            <label>Frequency TSV <input type="file" id="local-freq" accept=".tsv,.txt" /></label>
+            <button id="setup-local">Install local files</button>
+          </details>
+        </div>
+      </section>
+
+      <section id="tab-import" class="tab">
+        <div class="card">
+          <h2>Import vocabulary CSV</h2>
+          <p class="hint">
+            Accepts the CSV exported by manga-translator or language-reactor-clone
+            (<code>word,translation,context,language,…</code>). Words are lemmatized
+            on import; existing entries are never downgraded.
+          </p>
+          <label>File <input type="file" id="import-file" accept=".csv,.txt" /></label>
+          <label>Import as
+            <select id="import-status">
+              <option value="learning">Learning (words I looked up)</option>
+              <option value="known">Known</option>
+            </select>
+          </label>
+          <button id="import-run" class="primary">Import</button>
+          <div id="import-result" class="hint"></div>
+        </div>
+      </section>
+
+      <section id="tab-calibrate" class="tab">
+        <div class="card" id="cal-intro">
+          <h2>Estimate your vocabulary</h2>
+          <p class="hint">
+            You'll see ~35 words sampled across the frequency spectrum. Answer
+            honestly whether you know each one; the estimate marks the most
+            frequent N words as known. Requires installed language data.
+          </p>
+          <button id="cal-start" class="primary">Start quiz</button>
+        </div>
+        <div class="card" id="cal-quiz" hidden>
+          <div id="cal-word"></div>
+          <div class="cal-buttons">
+            <button id="cal-know" class="primary">I know it</button>
+            <button id="cal-dont">Don't know</button>
+          </div>
+          <div id="cal-progress" class="hint"></div>
+        </div>
+        <div class="card" id="cal-result" hidden>
+          <h2>Result</h2>
+          <p>You know roughly the top <b id="cal-topn"></b> words.</p>
+          <input type="range" id="cal-slider" min="100" max="50000" step="100" />
+          <p class="hint">Adjust if the estimate feels off, then apply.</p>
+          <button id="cal-apply" class="primary">Mark top <span id="cal-topn2"></span> words as known</button>
+          <div id="cal-applied" class="hint"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,78 @@
+body {
+  width: 280px;
+  margin: 0;
+  padding: 12px;
+  font: 13px/1.5 sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+}
+
+h1 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.row label {
+  color: #aaa;
+}
+
+select {
+  background: #242440;
+  color: #eee;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 4px 6px;
+  max-width: 150px;
+}
+
+button {
+  width: 100%;
+  background: #242440;
+  color: #cfe3ff;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  margin: 4px 0;
+}
+
+button:hover {
+  background: #2d4a77;
+}
+
+button.primary {
+  background: #2d4a77;
+  font-weight: 600;
+}
+
+button.primary.active {
+  background: #77452d;
+}
+
+.checkbox {
+  justify-content: flex-start;
+  color: #aaa;
+  cursor: pointer;
+}
+
+.state {
+  margin: 8px 0;
+  padding: 8px;
+  background: #16162a;
+  border-radius: 6px;
+  color: #999;
+  font-size: 12px;
+}
+
+.state b {
+  color: #cfe3ff;
+}
