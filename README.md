@@ -27,9 +27,12 @@ i+1 sweet spot.
 - **Library** — every page/video you read with the reader on is saved and
   rescored live against your current knowledge; sort by comprehensibility,
   pin your reading list.
-- **YouTube** — watch pages get a score badge next to the title (fetched from
-  the video's subtitles in your target language); on search result pages a
-  "% Score results" button badges up to 30 thumbnails.
+- **YouTube** — watch pages get a score badge above the title (fetched from
+  the video's subtitles in your target language), and the rendered subtitles
+  themselves become clickable: words are highlighted by status, clicking
+  pauses the video and opens the tooltip with Learning/Known/Ignore buttons —
+  marking words while watching refines your knowledge over time. On browse
+  and search pages a "% Score results" button badges up to 30 thumbnails.
 - **Bootstrap your knowledge** three ways (app page):
   - *Calibrate*: a ~35-word frequency quiz estimates "you know the top N
     words" (logistic fit), adjustable before applying.
