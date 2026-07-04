@@ -1,7 +1,9 @@
-import type { Message, Settings, TokenInfo } from '../utils/types'
+import type { Message, Settings, TokenInfo, WordStatus } from '../utils/types'
 import { tokenize } from '../utils/tokenizer'
 import { difficultyLabel, scoreTokens } from '../utils/scoring'
 import { fetchCaptionText, fetchVideoInfo, pickTrack, videoIdFromUrl } from '../utils/youtube-captions'
+import { ReaderTooltip, type WordStatusApi } from '../shared/tooltip'
+import { collectTextNodes, wrapTextNode } from '../shared/word-wrapper'
 
 const STYLE = `
 #ci-yt-badge {
@@ -24,6 +26,10 @@ const STYLE = `
   box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 }
 #ci-score-results:hover { background: #2d4a77; }
+.ytp-caption-window-container .ci-word { cursor: pointer; }
+.ytp-caption-window-container .ci-word:hover { text-decoration: underline dotted; }
+.ytp-caption-window-container .ci-word.ci-unknown { background: rgba(96, 145, 255, 0.4); border-radius: 3px; }
+.ytp-caption-window-container .ci-word.ci-learning { background: rgba(255, 213, 0, 0.4); border-radius: 3px; }
 `
 
 function send(msg: Message): Promise<any> {
@@ -53,6 +59,140 @@ export default defineContentScript({
         for (const [t, info] of Object.entries(res || {})) map.set(t, info)
       }
       return map
+    }
+
+    // ── Clickable subtitle words ────────────────────────────
+    // Wraps the rendered caption text in .ci-word spans: click → tooltip
+    // with translation + Learning/Known/Ignore buttons. Marking words while
+    // watching continuously refines the knowledge base ("calibration over
+    // time"). Pattern from language-reactor-clone's caption injection.
+
+    const tokenInfo = new Map<string, TokenInfo>()
+    const lemmaStatus = new Map<string, WordStatus | 'unknown' | 'name'>()
+
+    const statusApi: WordStatusApi = {
+      lemmaFor(span) {
+        return span.dataset.lemma || (span.dataset.word || '').toLowerCase()
+      },
+      statusFor(lemma) {
+        const s = lemmaStatus.get(lemma)
+        return s === 'name' ? 'unknown' : (s ?? 'unknown')
+      },
+      set(lemma, status, extras) {
+        if (!settings) return
+        lemmaStatus.set(lemma, status)
+        repaintLemma(lemma)
+        send({
+          type: 'SET_WORD_STATUS',
+          payload: {
+            lang: settings.targetLanguage,
+            lemma,
+            status,
+            translation: extras?.translation,
+            context: extras?.context,
+            source: extras?.translation ? 'click' : 'manual',
+          },
+        }).catch(() => {})
+      },
+    }
+
+    const tooltip = new ReaderTooltip(send, statusApi)
+    tooltip.attach()
+
+    // Clicking a subtitle word pauses the video (ReaderTooltip only calls
+    // stopPropagation, so this capture listener still runs).
+    document.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement
+      if (t.closest?.('.ci-word') && t.closest('.ytp-caption-window-container')) {
+        document.querySelector('video')?.pause()
+      }
+    }, true)
+
+    function statusOf(token: string): TokenInfo | undefined {
+      const info = tokenInfo.get(token)
+      if (!info) return undefined
+      const live = lemmaStatus.get(info.lemma)
+      if (!live || live === info.status) return info
+      return { lemma: info.lemma, status: live }
+    }
+
+    function paintSpan(span: HTMLElement) {
+      const info = statusOf(span.dataset.word || '')
+      span.classList.remove('ci-unknown', 'ci-learning')
+      if (!info) return
+      span.dataset.lemma = info.lemma
+      if (info.status === 'unknown') span.classList.add('ci-unknown')
+      else if (info.status === 'learning') span.classList.add('ci-learning')
+    }
+
+    function repaintLemma(lemma: string) {
+      const sel = `.ci-word[data-lemma="${CSS.escape(lemma)}"]`
+      for (const span of document.querySelectorAll<HTMLElement>(sel)) paintSpan(span)
+    }
+
+    let captionObserver: MutationObserver | null = null
+    let captionPoll: ReturnType<typeof setInterval> | null = null
+    let injectTimer: ReturnType<typeof setTimeout> | null = null
+    let injecting = false
+
+    async function injectCaptions() {
+      const cw = document.querySelector<HTMLElement>('.ytp-caption-window-container')
+      if (!cw || !settings) return
+      // Tooltip reads the language pair from this ancestor
+      cw.dataset.from = settings.targetLanguage
+      cw.dataset.to = settings.nativeLanguage
+
+      injecting = true
+      const spans: HTMLElement[] = []
+      try {
+        for (const node of collectTextNodes(cw)) spans.push(...wrapTextNode(node))
+      } finally {
+        injecting = false
+      }
+
+      const pending = [...new Set(
+        spans.map(s => s.dataset.word || '').filter(w => w && !tokenInfo.has(w)),
+      )]
+      for (const span of spans) paintSpan(span) // paint already-known tokens now
+      if (pending.length === 0) return
+
+      const res: Record<string, TokenInfo> = await send({
+        type: 'ANALYZE_TOKENS',
+        payload: { lang: settings.targetLanguage, tokens: pending },
+      }).catch(() => ({}))
+      for (const [t, info] of Object.entries(res || {})) {
+        tokenInfo.set(t, info)
+        if (!lemmaStatus.has(info.lemma)) lemmaStatus.set(info.lemma, info.status)
+      }
+      for (const span of spans) {
+        if (span.isConnected) paintSpan(span)
+      }
+    }
+
+    function startCaptionReader() {
+      if (captionPoll || captionObserver) return
+      captionPoll = setInterval(() => {
+        const cw = document.querySelector('.ytp-caption-window-container')
+        if (!cw) return
+        clearInterval(captionPoll!)
+        captionPoll = null
+        captionObserver = new MutationObserver(() => {
+          if (injecting) return
+          if (injectTimer) clearTimeout(injectTimer)
+          injectTimer = setTimeout(injectCaptions, 30)
+        })
+        captionObserver.observe(cw, { childList: true, subtree: true, characterData: true })
+        injectCaptions()
+      }, 1000)
+    }
+
+    function stopCaptionReader() {
+      if (captionPoll) {
+        clearInterval(captionPoll)
+        captionPoll = null
+      }
+      captionObserver?.disconnect()
+      captionObserver = null
     }
 
     // ── Watch page badge ────────────────────────────────────
@@ -147,6 +287,7 @@ export default defineContentScript({
         currentVideoId = videoId
         document.getElementById('ci-yt-badge')?.remove()
         document.getElementById('ci-score-results')?.remove()
+        startCaptionReader()
         // The metadata section renders shortly after yt-navigate-finish;
         // after ~5s we score anyway and fall back to the floating badge.
         const tryScore = (attempt = 0) => {
@@ -158,6 +299,7 @@ export default defineContentScript({
       } else {
         currentVideoId = null
         document.getElementById('ci-yt-badge')?.remove()
+        stopCaptionReader()
         // Any browse surface with thumbnails can be scored on demand
         ensureScoreResultsButton()
       }
@@ -226,10 +368,17 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener((message: any, _sender, sendResponse) => {
       if (message?.type === 'SETTINGS_UPDATED') {
         settings = message.payload
+        if (settings) tooltip.setPrimaryTranslation(settings.primaryTranslation)
         sendResponse({ ok: true })
       }
       return false
     })
+    send({ type: 'GET_SETTINGS' })
+      .then((s: Settings) => {
+        settings = s
+        if (s) tooltip.setPrimaryTranslation(s.primaryTranslation)
+      })
+      .catch(() => {})
     onNavigation()
   },
 })
