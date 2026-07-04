@@ -65,10 +65,12 @@ function stripHtml(s: string): string {
     .replace(/\{\{c\d+::(.*?)(?:::.*?)?\}\}/g, '$1') // Anki cloze → inner text
     .replace(/\[sound:[^\]]*\]/g, '')
     .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&(nbsp|amp|lt|gt|quot|apos|auml|ouml|uuml|Auml|Ouml|Uuml|szlig);/g, (_, name) => (
+      { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+        auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß' } as Record<string, string>
+    )[name])
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -117,14 +119,18 @@ function parseLuteCsv(rows: string[][]): ParsedVocabFile {
 /** Anki "Notes in Plain Text" export: #-headers, then delimited fields (word, translation, …). */
 function parseAnkiExport(text: string): ParsedVocabFile {
   let delim = '\t'
+  // Metadata columns announced in the header (1-based): guid/notetype/deck/tags
+  const skipCols = new Set<number>()
   const bodyLines: string[] = []
   for (const line of text.replace(/^﻿/, '').split('\n')) {
     if (line.startsWith('#')) {
-      const m = line.match(/^#separator:(.+)/i)
-      if (m) {
-        const v = m[1].trim().toLowerCase()
+      const sep = line.match(/^#separator:(.+)/i)
+      if (sep) {
+        const v = sep[1].trim().toLowerCase()
         delim = v === 'tab' ? '\t' : v === 'semicolon' ? ';' : v === 'comma' ? ',' : v === 'pipe' ? '|' : v.length === 1 ? v : '\t'
       }
+      const col = line.match(/^#(?:guid|notetype|deck|tags) column:(\d+)/i)
+      if (col) skipCols.add(Number(col[1]) - 1)
       continue
     }
     bodyLines.push(line)
@@ -133,14 +139,14 @@ function parseAnkiExport(text: string): ParsedVocabFile {
   const entries: ImportedEntry[] = []
   let skippedPhrases = 0
   for (const row of rows) {
-    const fields = row.map(stripHtml).filter(Boolean)
-    if (fields.length === 0) continue
+    const fields = row.filter((_, i) => !skipCols.has(i)).map(stripHtml)
     const word = fields[0]
+    if (!word) continue
     if (!isSingleWord(word)) {
       skippedPhrases++
       continue
     }
-    entries.push({ lemmaOrForm: word, translation: fields[1] })
+    entries.push({ lemmaOrForm: word, translation: fields.slice(1).find(Boolean) })
   }
   return { format: 'anki', entries, skippedPhrases }
 }

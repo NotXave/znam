@@ -172,7 +172,13 @@ export default defineBackground(() => {
   })
 
   browser.runtime.onConnect.addListener((port) => {
-    if (port.name === 'language-setup') handleSetupPort(port)
+    if (port.name === 'language-setup') {
+      // Word records may have been re-keyed to lemmas — drop the memory cache
+      handleSetupPort(port, (lang) => {
+        statusMaps.delete(lang)
+        statusLoads.delete(lang)
+      })
+    }
   })
 
   // sendResponse + `return true` instead of returning a promise:

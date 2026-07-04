@@ -85,6 +85,9 @@
             multi-word terms are skipped.
           </p>
           <label>File <input type="file" id="import-file" accept=".csv,.txt,.tsv" /></label>
+          <div id="import-preview" class="hint" hidden></div>
+          <label class="checkbox" id="import-swap-row" hidden><input type="checkbox" id="import-swap" />
+            Swap columns (my file has the translation first, the word second)</label>
           <label class="checkbox"><input type="checkbox" id="import-any-lang" />
             Ignore the file's language column (import every row into the selected language)</label>
           <label>Import as (when the file has no own status)

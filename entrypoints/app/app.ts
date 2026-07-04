@@ -8,7 +8,7 @@ import type {
 } from '../../utils/types'
 import { getSettings, saveSettings } from '../../utils/settings'
 import { difficultyLabel, rescoreLemmaCounts } from '../../utils/scoring'
-import { parseVocabFile, wordsToAnki, wordsToCsv } from '../../utils/csv-import'
+import { parseVocabFile, wordsToAnki, wordsToCsv, type ParsedVocabFile } from '../../utils/csv-import'
 import type { CalibrationSample } from '../../utils/calibration'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -336,14 +336,54 @@ async function init() {
     })
   })
 
-  $('import-run').addEventListener('click', async () => {
-    const file = $<HTMLInputElement>('import-file').files?.[0]
-    const result = $('import-result')
-    if (!file) {
-      result.textContent = 'Pick a CSV file first.'
+  let parsedImport: ParsedVocabFile | null = null
+
+  function importEntries() {
+    if (!parsedImport) return []
+    const swap = $<HTMLInputElement>('import-swap').checked
+    return swap
+      ? parsedImport.entries
+          .filter(e => e.translation)
+          .map(e => ({ ...e, lemmaOrForm: e.translation!, translation: e.lemmaOrForm }))
+      : parsedImport.entries
+  }
+
+  function renderImportPreview() {
+    const preview = $('import-preview')
+    if (!parsedImport) {
+      preview.hidden = true
       return
     }
-    const { format, entries, skippedPhrases } = parseVocabFile(await file.text())
+    const { format, skippedPhrases } = parsedImport
+    const entries = importEntries()
+    const sample = entries
+      .slice(0, 8)
+      .map(e => `${e.lemmaOrForm} → ${e.translation || '—'}${e.status ? ` (${e.status})` : ''}`)
+      .join('<br/>')
+    preview.hidden = false
+    preview.innerHTML =
+      `Detected <b>${format}</b> format, ${entries.length} single words` +
+      (skippedPhrases ? `, ${skippedPhrases} multi-word terms will be skipped` : '') +
+      `.<br/><br/>${sample || '(nothing parseable)'}${entries.length > 8 ? '<br/>…' : ''}`
+    $('import-swap-row').hidden = false
+  }
+
+  $('import-file').addEventListener('change', async () => {
+    const file = $<HTMLInputElement>('import-file').files?.[0]
+    parsedImport = file ? parseVocabFile(await file.text()) : null
+    $('import-result').textContent = ''
+    renderImportPreview()
+  })
+  $('import-swap').addEventListener('change', renderImportPreview)
+
+  $('import-run').addEventListener('click', async () => {
+    const result = $('import-result')
+    if (!parsedImport) {
+      result.textContent = 'Pick a file first.'
+      return
+    }
+    const { format, skippedPhrases } = parsedImport
+    const entries = importEntries()
     // Rows may carry a language as a code ("pl") or a full name ("Polish",
     // Lute does this); import matching rows or rows without a language.
     const langName = (LANGUAGES.find(([c]) => c === lang)?.[1] || '').toLowerCase()
