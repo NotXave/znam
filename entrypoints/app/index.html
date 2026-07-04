@@ -75,14 +75,17 @@
 
       <section id="tab-import" class="tab">
         <div class="card">
-          <h2>Import vocabulary CSV</h2>
+          <h2>Import vocabulary</h2>
           <p class="hint">
-            Accepts the CSV exported by manga-translator or language-reactor-clone
-            (<code>word,translation,context,language,…</code>). Words are lemmatized
-            on import; existing entries are never downgraded.
+            Auto-detects the format: <b>Lute</b> term export (CSV — statuses are
+            mapped: 1–5 → learning, W → known, I → ignored), <b>Anki</b> "Notes in
+            Plain Text" export (first field = word, second = translation),
+            or the CSV from manga-translator / language-reactor-clone. Words are
+            lemmatized on import; existing entries are never downgraded;
+            multi-word terms are skipped.
           </p>
-          <label>File <input type="file" id="import-file" accept=".csv,.txt" /></label>
-          <label>Import as
+          <label>File <input type="file" id="import-file" accept=".csv,.txt,.tsv" /></label>
+          <label>Import as (when the file has no own status)
             <select id="import-status">
               <option value="learning">Learning (words I looked up)</option>
               <option value="known">Known</option>

@@ -141,7 +141,8 @@ export type Message =
       type: 'IMPORT_WORDS'
       payload: {
         lang: string
-        entries: { lemmaOrForm: string; translation?: string; context?: string }[]
+        entries: { lemmaOrForm: string; translation?: string; context?: string; status?: WordStatus }[]
+        /** Default status for entries that don't carry their own. */
         status: WordStatus
       }
     }

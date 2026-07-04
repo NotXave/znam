@@ -8,7 +8,7 @@ import type {
 } from '../../utils/types'
 import { getSettings, saveSettings } from '../../utils/settings'
 import { difficultyLabel, rescoreLemmaCounts } from '../../utils/scoring'
-import { parseVocabCsv, wordsToAnki, wordsToCsv } from '../../utils/csv-import'
+import { parseVocabFile, wordsToAnki, wordsToCsv } from '../../utils/csv-import'
 import type { CalibrationSample } from '../../utils/calibration'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -343,17 +343,30 @@ async function init() {
       result.textContent = 'Pick a CSV file first.'
       return
     }
-    const entries = parseVocabCsv(await file.text())
-    // Entries may carry their own language column; import only matching rows
-    // (or rows without a language) into the selected language.
-    const relevant = entries.filter(e => !e.language || e.language === lang)
+    const { format, entries, skippedPhrases } = parseVocabFile(await file.text())
+    // Rows may carry a language as a code ("pl") or a full name ("Polish",
+    // Lute does this); import matching rows or rows without a language.
+    const langName = (LANGUAGES.find(([c]) => c === lang)?.[1] || '').toLowerCase()
+    const matchesLang = (l: string) => {
+      const v = l.trim().toLowerCase()
+      return v === lang.toLowerCase() || v === langName
+    }
+    const relevant = entries.filter(e => !e.language || matchesLang(e.language))
     if (relevant.length === 0) {
-      result.textContent = `No rows for "${lang}" found in this file (${entries.length} total).`
+      const seen = [...new Set(entries.map(e => e.language).filter(Boolean))].join(', ')
+      result.textContent = `Detected ${format} format, but no rows for "${lang}"` +
+        (seen ? ` — the file contains: ${seen}.` : ` (${entries.length} rows, none matched).`)
       return
     }
     const status = $<HTMLSelectElement>('import-status').value as WordStatus
     const resp = await send({ type: 'IMPORT_WORDS', payload: { lang, entries: relevant, status } })
-    result.textContent = `Imported ${resp.imported}, skipped ${resp.skipped} already-tracked words.`
+    const parts = [
+      `Detected ${format} format.`,
+      `Imported ${resp.imported}, skipped ${resp.skipped} already-tracked words.`,
+    ]
+    if (skippedPhrases > 0) parts.push(`${skippedPhrases} multi-word terms skipped.`)
+    if (relevant.length < entries.length) parts.push(`${entries.length - relevant.length} rows in other languages skipped.`)
+    result.textContent = parts.join(' ')
   })
 
   $('cal-start').addEventListener('click', calStart)

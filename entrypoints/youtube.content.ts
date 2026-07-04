@@ -17,6 +17,11 @@ const STYLE = `
   vertical-align: middle; white-space: nowrap;
 }
 #ci-yt-badge .ci-label { color: #8ab4f8; font-weight: 400; }
+#ci-yt-badge.ci-floating {
+  position: fixed; right: 16px; bottom: 60px; z-index: 9999;
+  margin-left: 0; padding: 8px 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5); font-size: 14px;
+}
 .ci-thumb-badge {
   position: absolute; top: 6px; left: 6px; z-index: 100;
   padding: 1px 7px; border-radius: 10px;
@@ -64,20 +69,29 @@ export default defineContentScript({
     // ── Watch page badge ────────────────────────────────────
 
     function badgeHost(): HTMLElement | null {
+      // YouTube reshuffles its watch-page DOM regularly — try several shapes.
       return (
         document.querySelector<HTMLElement>('ytd-watch-metadata #title h1') ||
-        document.querySelector<HTMLElement>('h1.ytd-watch-metadata')
+        document.querySelector<HTMLElement>('ytd-watch-metadata h1') ||
+        document.querySelector<HTMLElement>('#above-the-fold #title') ||
+        document.querySelector<HTMLElement>('h1.title.ytd-video-primary-info-renderer')
       )
     }
 
     function setBadge(html: string) {
       let badge = document.getElementById('ci-yt-badge')
       if (!badge) {
-        const host = badgeHost()
-        if (!host) return
         badge = document.createElement('span')
         badge.id = 'ci-yt-badge'
-        host.appendChild(badge)
+        const host = badgeHost()
+        if (host) {
+          host.appendChild(badge)
+        } else {
+          // No recognizable title element — float the badge so it's never lost
+          console.info('[znam] no title element found, using floating badge')
+          badge.classList.add('ci-floating')
+          document.body.appendChild(badge)
+        }
       }
       badge.innerHTML = html
     }
@@ -95,7 +109,10 @@ export default defineContentScript({
         const html = await resp.text()
         if (videoId !== currentVideoId) return
         const player = extractPlayerResponse(html)
-        const track = pickTrack(listCaptionTracks(player), lang)
+        const tracks = listCaptionTracks(player)
+        const track = pickTrack(tracks, lang)
+        console.info('[znam] tracks:', tracks.map(t => t.languageCode + (t.isAsr ? '/asr' : '')).join(', ') || 'none',
+          '→ picked:', track?.languageCode ?? 'none')
         if (!track) {
           setBadge(`<span class="ci-label">no ${lang} subs</span>`)
           return
@@ -139,20 +156,25 @@ export default defineContentScript({
 
     function onNavigation() {
       const videoId = videoIdFromUrl(location.href)
+      console.info('[znam] navigation:', location.pathname, videoId ?? '')
       if (videoId) {
         if (videoId === currentVideoId) return
         currentVideoId = videoId
         document.getElementById('ci-yt-badge')?.remove()
-        // The metadata section renders shortly after yt-navigate-finish
+        document.getElementById('ci-score-results')?.remove()
+        // The metadata section renders shortly after yt-navigate-finish;
+        // after ~5s we score anyway and fall back to the floating badge.
         const tryScore = (attempt = 0) => {
-          if (badgeHost()) scoreWatchPage(videoId)
-          else if (attempt < 20) setTimeout(() => tryScore(attempt + 1), 500)
+          if (videoId !== currentVideoId) return
+          if (badgeHost() || attempt >= 10) scoreWatchPage(videoId)
+          else setTimeout(() => tryScore(attempt + 1), 500)
         }
         tryScore()
       } else {
         currentVideoId = null
         document.getElementById('ci-yt-badge')?.remove()
-        if (location.pathname === '/results') ensureScoreResultsButton()
+        // Any browse surface with thumbnails can be scored on demand
+        ensureScoreResultsButton()
       }
     }
 
@@ -186,6 +208,7 @@ export default defineContentScript({
         btn.textContent = '⏳ Scoring…'
       }
       const videos = collectResultVideos()
+      console.info(`[znam] scoring ${videos.size} thumbnails`)
       const scores: Record<string, number | null> = await send({
         type: 'SCORE_VIDEOS',
         payload: {

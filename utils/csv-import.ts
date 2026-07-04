@@ -1,14 +1,23 @@
-import type { WordRecord } from './types'
+import type { WordRecord, WordStatus } from './types'
 
 export interface ImportedEntry {
   lemmaOrForm: string
   translation?: string
   context?: string
   language?: string
+  /** Per-entry status (Lute exports carry one); overrides the import default. */
+  status?: WordStatus
 }
 
-/** Minimal RFC-4180 CSV parser (quotes, escaped quotes, CRLF). */
-export function parseCsv(text: string): string[][] {
+export interface ParsedVocabFile {
+  format: 'znam' | 'lute' | 'anki' | 'generic'
+  entries: ImportedEntry[]
+  /** Multi-word terms that were skipped (znam tracks single lemmas). */
+  skippedPhrases: number
+}
+
+/** RFC-4180-style parser with a configurable delimiter (quotes, escaped quotes, CRLF). */
+export function parseDelimited(text: string, delim: string): string[][] {
   const rows: string[][] = []
   let row: string[] = []
   let field = ''
@@ -29,7 +38,7 @@ export function parseCsv(text: string): string[][] {
       }
     } else if (c === '"') {
       inQuotes = true
-    } else if (c === ',') {
+    } else if (c === delim) {
       row.push(field)
       field = ''
     } else if (c === '\n' || c === '\r') {
@@ -45,6 +54,122 @@ export function parseCsv(text: string): string[][] {
   row.push(field)
   if (row.some(f => f !== '')) rows.push(row)
   return rows
+}
+
+export function parseCsv(text: string): string[][] {
+  return parseDelimited(text, ',')
+}
+
+function stripHtml(s: string): string {
+  return s
+    .replace(/\{\{c\d+::(.*?)(?:::.*?)?\}\}/g, '$1') // Anki cloze → inner text
+    .replace(/\[sound:[^\]]*\]/g, '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function isSingleWord(s: string): boolean {
+  return !!s && !/\s/.test(s) && s.length < 40
+}
+
+/** Lute status column → znam status. Lute: 1–5 learning levels, W/99 well known, I/98 ignored. */
+function luteStatus(s: string | undefined): WordStatus | undefined {
+  const v = (s || '').trim().toLowerCase()
+  if (v === 'w' || v === '99') return 'known'
+  if (v === 'i' || v === '98') return 'ignored'
+  if (/^[1-5]$/.test(v)) return 'learning'
+  return undefined
+}
+
+/** Lute "Export terms" CSV: header row with term/translation/language/status columns. */
+function parseLuteCsv(rows: string[][]): ParsedVocabFile {
+  const header = rows[0].map(h => h.trim().toLowerCase())
+  const col = (name: string) => header.indexOf(name)
+  const iTerm = col('term')
+  const iTrans = col('translation')
+  const iLang = col('language')
+  const iStatus = col('status')
+
+  const entries: ImportedEntry[] = []
+  let skippedPhrases = 0
+  for (let i = 1; i < rows.length; i++) {
+    const term = stripHtml(rows[i][iTerm] || '')
+    if (!term) continue
+    if (!isSingleWord(term)) {
+      skippedPhrases++
+      continue
+    }
+    entries.push({
+      lemmaOrForm: term,
+      translation: iTrans >= 0 ? stripHtml(rows[i][iTrans] || '') || undefined : undefined,
+      language: iLang >= 0 ? rows[i][iLang]?.trim() || undefined : undefined,
+      status: iStatus >= 0 ? luteStatus(rows[i][iStatus]) : undefined,
+    })
+  }
+  return { format: 'lute', entries, skippedPhrases }
+}
+
+/** Anki "Notes in Plain Text" export: #-headers, then delimited fields (word, translation, …). */
+function parseAnkiExport(text: string): ParsedVocabFile {
+  let delim = '\t'
+  const bodyLines: string[] = []
+  for (const line of text.replace(/^﻿/, '').split('\n')) {
+    if (line.startsWith('#')) {
+      const m = line.match(/^#separator:(.+)/i)
+      if (m) {
+        const v = m[1].trim().toLowerCase()
+        delim = v === 'tab' ? '\t' : v === 'semicolon' ? ';' : v === 'comma' ? ',' : v === 'pipe' ? '|' : v.length === 1 ? v : '\t'
+      }
+      continue
+    }
+    bodyLines.push(line)
+  }
+  const rows = parseDelimited(bodyLines.join('\n'), delim)
+  const entries: ImportedEntry[] = []
+  let skippedPhrases = 0
+  for (const row of rows) {
+    const fields = row.map(stripHtml).filter(Boolean)
+    if (fields.length === 0) continue
+    const word = fields[0]
+    if (!isSingleWord(word)) {
+      skippedPhrases++
+      continue
+    }
+    entries.push({ lemmaOrForm: word, translation: fields[1] })
+  }
+  return { format: 'anki', entries, skippedPhrases }
+}
+
+/**
+ * Auto-detect and parse a vocabulary file:
+ * - Anki plain-text export (#separator headers or tab-separated)
+ * - Lute term export (CSV with a `term` header column)
+ * - manga-translator / language-reactor-clone CSV (word,translation,context,language,…)
+ * - generic CSV/TSV (first column = word, second = translation)
+ */
+export function parseVocabFile(text: string): ParsedVocabFile {
+  if (/^﻿?#separator:/im.test(text.slice(0, 200))) return parseAnkiExport(text)
+
+  const firstLine = text.replace(/^﻿/, '').split('\n', 1)[0] || ''
+  if (firstLine.includes('\t') && !firstLine.includes(',')) return parseAnkiExport(text)
+
+  const rows = parseCsv(text)
+  if (rows.length === 0) return { format: 'generic', entries: [], skippedPhrases: 0 }
+  const header = rows[0].map(h => h.trim().toLowerCase())
+  if (header.includes('term')) return parseLuteCsv(rows)
+
+  const entries = parseVocabCsv(text)
+  const single = entries.filter(e => isSingleWord(e.lemmaOrForm))
+  return {
+    format: header[0] === 'word' ? 'znam' : 'generic',
+    entries: single,
+    skippedPhrases: entries.length - single.length,
+  }
 }
 
 /**

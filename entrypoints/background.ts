@@ -251,9 +251,10 @@ export default defineBackground(() => {
             const lower = entry.lemmaOrForm.toLowerCase()
             const lemma = lemmaMap.get(lower) ?? lower
             if (statuses.has(lemma)) continue // never downgrade existing knowledge
-            statuses.set(lemma, status)
+            const entryStatus = entry.status ?? status
+            statuses.set(lemma, entryStatus)
             records.push({
-              lang, lemma, status,
+              lang, lemma, status: entryStatus,
               translation: entry.translation,
               context: entry.context,
               source: 'import', createdAt: now, updatedAt: now,
