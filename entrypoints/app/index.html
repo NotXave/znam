@@ -85,6 +85,8 @@
             multi-word terms are skipped.
           </p>
           <label>File <input type="file" id="import-file" accept=".csv,.txt,.tsv" /></label>
+          <label class="checkbox"><input type="checkbox" id="import-any-lang" />
+            Ignore the file's language column (import every row into the selected language)</label>
           <label>Import as (when the file has no own status)
             <select id="import-status">
               <option value="learning">Learning (words I looked up)</option>

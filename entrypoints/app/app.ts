@@ -351,7 +351,8 @@ async function init() {
       const v = l.trim().toLowerCase()
       return v === lang.toLowerCase() || v === langName
     }
-    const relevant = entries.filter(e => !e.language || matchesLang(e.language))
+    const anyLang = $<HTMLInputElement>('import-any-lang').checked
+    const relevant = anyLang ? entries : entries.filter(e => !e.language || matchesLang(e.language))
     if (relevant.length === 0) {
       const seen = [...new Set(entries.map(e => e.language).filter(Boolean))].join(', ')
       result.textContent = `Detected ${format} format, but no rows for "${lang}"` +
