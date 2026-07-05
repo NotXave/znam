@@ -134,15 +134,22 @@ async function renderWords() {
   list.innerHTML = ''
   const frag = document.createDocumentFragment()
   for (const w of items.slice(0, 500)) {
+    const level = w.level ?? 1
+    const statusLabel = w.status === 'learning' ? `learning ${level}` : w.status
+    const levelButtons = [1, 2, 3, 4, 5]
+      .map(l =>
+        `<button data-s="learning" data-l="${l}" class="lvl-${l}${w.status === 'learning' && level === l ? ' active' : ''}" title="Learning stage ${l}">${l}</button>`,
+      )
+      .join('')
     const item = document.createElement('div')
     item.className = 'item'
     item.innerHTML = `
       <div class="grow">
-        <b></b> <span class="status-${w.status}">${w.status}</span>
+        <b></b> <span class="status-${w.status}">${statusLabel}</span>
         <div class="meta"></div>
       </div>
       <div class="word-status">
-        <button data-s="learning" ${w.status === 'learning' ? 'class="active"' : ''}>Learning</button>
+        ${levelButtons}
         <button data-s="known" ${w.status === 'known' ? 'class="active"' : ''}>Known</button>
         <button data-s="ignored" ${w.status === 'ignored' ? 'class="active"' : ''}>Ignore</button>
         <button data-s="unknown" title="Forget">✕</button>
@@ -156,7 +163,13 @@ async function renderWords() {
       if (!btn) return
       await send({
         type: 'SET_WORD_STATUS',
-        payload: { lang, lemma: w.lemma, status: btn.dataset.s as any, source: 'manual' },
+        payload: {
+          lang,
+          lemma: w.lemma,
+          status: btn.dataset.s as any,
+          level: btn.dataset.l ? (Number(btn.dataset.l) as any) : undefined,
+          source: 'manual',
+        },
       })
       renderWords()
     })
@@ -358,7 +371,10 @@ async function init() {
     const entries = importEntries()
     const sample = entries
       .slice(0, 8)
-      .map(e => `${e.lemmaOrForm} → ${e.translation || '—'}${e.status ? ` (${e.status})` : ''}`)
+      .map(e => {
+        const status = e.status === 'learning' && e.level ? `learning ${e.level}` : e.status
+        return `${e.lemmaOrForm} → ${e.translation || '—'}${status ? ` (${status})` : ''}`
+      })
       .join('<br/>')
     preview.hidden = false
     preview.innerHTML =

@@ -1,4 +1,4 @@
-import type { DictEntry, Message, ReversoResult, WordStatus } from '../utils/types'
+import type { DictEntry, LearningLevel, Message, ReversoResult, WordStatus } from '../utils/types'
 
 interface LookupData {
   word: string
@@ -20,10 +20,11 @@ interface LookupTarget {
 export interface WordStatusApi {
   lemmaFor(span: HTMLElement): string
   statusFor(lemma: string): WordStatus | 'unknown' | 'name'
+  levelFor(lemma: string): LearningLevel | undefined
   set(
     lemma: string,
     status: WordStatus | 'unknown',
-    extras?: { translation?: string; context?: string },
+    extras?: { translation?: string; context?: string; level?: LearningLevel },
   ): void
 }
 
@@ -222,7 +223,7 @@ export class ReaderTooltip {
       if (translation && !autoLearned && this.activeLemma) {
         autoLearned = true
         if (this.statusApi.statusFor(this.activeLemma) === 'unknown') {
-          this.statusApi.set(this.activeLemma, 'learning', { translation, context })
+          this.statusApi.set(this.activeLemma, 'learning', { translation, context, level: 1 })
         }
       }
     }
@@ -294,15 +295,24 @@ export class ReaderTooltip {
     el.textContent = `⏳ ${word}`
   }
 
+  // Lute-style level colors: 1 = just met (red) … 5 = almost known (green)
+  static readonly LEVEL_COLORS = ['#c14b4b', '#c1774b', '#b8a12e', '#8fa32e', '#5d9e4a']
+
   private statusRowHtml(): string {
     if (!this.activeLemma) return ''
     const status = this.statusApi.statusFor(this.activeLemma)
-    const btn = (action: string, label: string, active: boolean) =>
-      `<span class="ci-status-btn" data-action="${action}" style="cursor:pointer;padding:2px 8px;border-radius:4px;font-size:11px;background:${active ? '#2d4a77' : '#242440'};color:${active ? '#cfe3ff' : '#aaa'}">${label}</span>`
+    const level = this.statusApi.levelFor(this.activeLemma) ?? 1
+    const btn = (action: string, label: string, active: boolean, bg?: string, title = '') =>
+      `<span class="ci-status-btn" data-action="${action}" title="${title}" style="cursor:pointer;padding:2px 7px;border-radius:4px;font-size:11px;background:${active ? (bg || '#2d4a77') : '#242440'};color:${active ? '#fff' : '#aaa'}">${label}</span>`
+    const levels = [1, 2, 3, 4, 5]
+      .map(l => btn(`level-${l}`, String(l), status === 'learning' && level === l,
+        ReaderTooltip.LEVEL_COLORS[l - 1], `Learning stage ${l}`))
+      .join('')
     return `
-      <div class="ci-status-row" style="display:flex;gap:6px;margin-top:6px;border-top:1px solid #1a1a30;padding-top:6px;align-items:center">
-        ${btn('learning', 'Learning', status === 'learning')}
-        ${btn('known', 'Known', status === 'known')}
+      <div class="ci-status-row" style="display:flex;gap:4px;margin-top:6px;border-top:1px solid #1a1a30;padding-top:6px;align-items:center;flex-wrap:wrap">
+        ${levels}
+        <span style="color:#333">|</span>
+        ${btn('known', '✓ Known', status === 'known', '#2d6e3e')}
         ${btn('ignored', 'Ignore', status === 'ignored')}
         ${btn('unknown', 'Reset', status === 'unknown' || status === 'name')}
       </div>
@@ -423,9 +433,17 @@ export class ReaderTooltip {
         const btn = (e.target as HTMLElement).closest('.ci-status-btn') as HTMLElement | null
         if (!btn || !this.activeLemma) return
         e.stopPropagation()
-        const action = btn.getAttribute('data-action') as WordStatus | 'unknown'
+        const action = btn.getAttribute('data-action') || ''
         const currentTranslation = this.tooltip?.querySelector('.ci-dd-current')?.textContent || ''
-        this.statusApi.set(this.activeLemma, action, { translation: currentTranslation })
+        const levelMatch = action.match(/^level-([1-5])$/)
+        if (levelMatch) {
+          this.statusApi.set(this.activeLemma, 'learning', {
+            translation: currentTranslation,
+            level: Number(levelMatch[1]) as LearningLevel,
+          })
+        } else {
+          this.statusApi.set(this.activeLemma, action as WordStatus | 'unknown', { translation: currentTranslation })
+        }
         // Full re-render updates the active status button
         this.showTooltip(data, currentTranslation || translation, x, y)
       })

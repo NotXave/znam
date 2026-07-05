@@ -1,4 +1,4 @@
-import type { WordRecord, WordStatus } from './types'
+import type { LearningLevel, WordRecord, WordStatus } from './types'
 
 export interface ImportedEntry {
   lemmaOrForm: string
@@ -7,6 +7,8 @@ export interface ImportedEntry {
   language?: string
   /** Per-entry status (Lute exports carry one); overrides the import default. */
   status?: WordStatus
+  /** Lute learning stage 1–5, kept as-is. */
+  level?: LearningLevel
 }
 
 export interface ParsedVocabFile {
@@ -80,11 +82,11 @@ function isSingleWord(s: string): boolean {
 }
 
 /** Lute status column → znam status. Lute: 1–5 learning levels, W/99 well known, I/98 ignored. */
-function luteStatus(s: string | undefined): WordStatus | undefined {
+function luteStatus(s: string | undefined): { status: WordStatus; level?: LearningLevel } | undefined {
   const v = (s || '').trim().toLowerCase()
-  if (v === 'w' || v === '99') return 'known'
-  if (v === 'i' || v === '98') return 'ignored'
-  if (/^[1-5]$/.test(v)) return 'learning'
+  if (v === 'w' || v === '99') return { status: 'known' }
+  if (v === 'i' || v === '98') return { status: 'ignored' }
+  if (/^[1-5]$/.test(v)) return { status: 'learning', level: Number(v) as LearningLevel }
   return undefined
 }
 
@@ -106,11 +108,13 @@ function parseLuteCsv(rows: string[][]): ParsedVocabFile {
       skippedPhrases++
       continue
     }
+    const mapped = iStatus >= 0 ? luteStatus(rows[i][iStatus]) : undefined
     entries.push({
       lemmaOrForm: term,
       translation: iTrans >= 0 ? stripHtml(rows[i][iTrans] || '') || undefined : undefined,
       language: iLang >= 0 ? rows[i][iLang]?.trim() || undefined : undefined,
-      status: iStatus >= 0 ? luteStatus(rows[i][iStatus]) : undefined,
+      status: mapped?.status,
+      level: mapped?.level,
     })
   }
   return { format: 'lute', entries, skippedPhrases }

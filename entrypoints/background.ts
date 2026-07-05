@@ -1,4 +1,4 @@
-import type { Message, TokenInfo, WordRecord, WordStatus } from '../utils/types'
+import type { LearningLevel, Message, TokenInfo, WordRecord, WordStatus } from '../utils/types'
 import { translate } from '../utils/translate'
 import { lookupWiktionary } from '../utils/dictionary'
 import { lookupReverso } from '../utils/reverso'
@@ -31,15 +31,20 @@ function urlId(url: string): string {
 
 // ── In-memory word-status cache (rebuildable from IDB) ──────
 
-const statusMaps = new Map<string, Map<string, WordStatus>>()
+interface StatusEntry {
+  status: WordStatus
+  level?: LearningLevel
+}
+
+const statusMaps = new Map<string, Map<string, StatusEntry>>()
 const statusLoads = new Map<string, Promise<void>>()
 
-async function statusMapFor(lang: string): Promise<Map<string, WordStatus>> {
+async function statusMapFor(lang: string): Promise<Map<string, StatusEntry>> {
   if (!statusMaps.has(lang)) {
     if (!statusLoads.has(lang)) {
       statusLoads.set(lang, (async () => {
-        const map = new Map<string, WordStatus>()
-        for (const rec of await getAllWords(lang)) map.set(rec.lemma, rec.status)
+        const map = new Map<string, StatusEntry>()
+        for (const rec of await getAllWords(lang)) map.set(rec.lemma, { status: rec.status, level: rec.level })
         statusMaps.set(lang, map)
       })())
     }
@@ -61,9 +66,9 @@ async function analyzeTokens(lang: string, tokens: string[]): Promise<Record<str
     const lower = token.toLowerCase()
     const dictLemma = lemmaMap.get(lower) ?? null
     const lemma = dictLemma ?? lower
-    const status = statuses.get(lemma)
-    if (status) {
-      out[token] = { lemma, status }
+    const entry = statuses.get(lemma)
+    if (entry) {
+      out[token] = { lemma, status: entry.status, level: entry.level }
       continue
     }
     // Proper-noun heuristic: capitalized, unknown to the dictionary, and the
@@ -87,17 +92,19 @@ async function setWordStatus(payload: Extract<Message, { type: 'SET_WORD_STATUS'
   }
   const existing = await getWord(lang, lemma)
   const now = Date.now()
+  const level = status === 'learning' ? (payload.level ?? existing?.level ?? 1) : undefined
   const rec: WordRecord = {
     lang,
     lemma,
     status,
+    level,
     translation: payload.translation || existing?.translation,
     context: payload.context || existing?.context,
     source: payload.source,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }
-  statuses.set(lemma, status)
+  statuses.set(lemma, { status, level })
   await putWords([rec])
   return { ok: true }
 }
@@ -111,7 +118,7 @@ async function markPageRead(lang: string, lemmas: string[]): Promise<{ promoted:
     records.push({
       lang, lemma, status: 'known', source: 'page-read', createdAt: now, updatedAt: now,
     })
-    statuses.set(lemma, 'known')
+    statuses.set(lemma, { status: 'known' })
   }
   await putWords(records)
   return { promoted: records.length }
@@ -247,9 +254,10 @@ export default defineBackground(() => {
             const lemma = lemmaMap.get(lower) ?? lower
             if (statuses.has(lemma)) continue // never downgrade existing knowledge
             const entryStatus = entry.status ?? status
-            statuses.set(lemma, entryStatus)
+            const entryLevel = entryStatus === 'learning' ? (entry.level ?? 1) : undefined
+            statuses.set(lemma, { status: entryStatus, level: entryLevel })
             records.push({
-              lang, lemma, status: entryStatus,
+              lang, lemma, status: entryStatus, level: entryLevel,
               translation: entry.translation,
               context: entry.context,
               source: 'import', createdAt: now, updatedAt: now,
@@ -300,7 +308,7 @@ export default defineBackground(() => {
           const records: WordRecord[] = []
           for (const lemma of await calibrationLemmas(lang, topN)) {
             if (statuses.has(lemma)) continue // never downgrade
-            statuses.set(lemma, 'known')
+            statuses.set(lemma, { status: 'known' })
             records.push({ lang, lemma, status: 'known', source: 'calibration', createdAt: now, updatedAt: now })
           }
           await putWords(records)

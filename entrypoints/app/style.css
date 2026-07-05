@@ -123,6 +123,11 @@ button:disabled { opacity: 0.5; cursor: default; }
 .word-status { display: flex; gap: 4px; }
 .word-status button { padding: 2px 8px; font-size: 11px; }
 .word-status button.active { background: #2d4a77; }
+.word-status button.lvl-1.active { background: #c14b4b; color: #fff; }
+.word-status button.lvl-2.active { background: #c1774b; color: #fff; }
+.word-status button.lvl-3.active { background: #b8a12e; color: #fff; }
+.word-status button.lvl-4.active { background: #8fa32e; color: #fff; }
+.word-status button.lvl-5.active { background: #5d9e4a; color: #fff; }
 
 .progress {
   margin-top: 10px;

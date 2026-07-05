@@ -3,7 +3,7 @@ import { ReaderTooltip, type WordStatusApi } from '../shared/tooltip'
 import { collectTextNodes, unwrapAll, wrapTextNode } from '../shared/word-wrapper'
 import { tokenize } from '../utils/tokenizer'
 import { difficultyLabel, scoreTokens, type PageScore } from '../utils/scoring'
-import type { Message, Settings, TokenInfo, WordStatus } from '../utils/types'
+import type { LearningLevel, Message, Settings, TokenInfo, WordStatus } from '../utils/types'
 
 const ANALYZE_CHUNK = 500
 const WRAP_BATCH = 200
@@ -12,7 +12,11 @@ const STYLE = `
 .ci-word { cursor: pointer; }
 .ci-word:hover { text-decoration: underline dotted; }
 .ci-word.ci-unknown { background: rgba(96, 145, 255, 0.20); border-radius: 2px; box-decoration-break: clone; }
-.ci-word.ci-learning { background: rgba(255, 213, 0, 0.30); border-radius: 2px; box-decoration-break: clone; }
+.ci-word.ci-l1 { background: rgba(193, 75, 75, 0.30); border-radius: 2px; box-decoration-break: clone; }
+.ci-word.ci-l2 { background: rgba(193, 119, 75, 0.28); border-radius: 2px; box-decoration-break: clone; }
+.ci-word.ci-l3 { background: rgba(255, 213, 0, 0.28); border-radius: 2px; box-decoration-break: clone; }
+.ci-word.ci-l4 { background: rgba(143, 163, 46, 0.26); border-radius: 2px; box-decoration-break: clone; }
+.ci-word.ci-l5 { background: rgba(93, 158, 74, 0.22); border-radius: 2px; box-decoration-break: clone; }
 #ci-badge {
   position: fixed; right: 16px; bottom: 16px; z-index: 2147483646;
   background: #1a1a2e; color: #fff; border-radius: 10px; padding: 10px 14px;
@@ -50,8 +54,9 @@ export default defineContentScript({
 
     // token (surface, case-preserved) → info from ANALYZE_TOKENS
     const tokenInfo = new Map<string, TokenInfo>()
-    // lemma → current status (updated live on user actions)
-    const lemmaStatus = new Map<string, WordStatus | 'unknown' | 'name'>()
+    // lemma → current status + level (updated live on user actions)
+    interface LiveStatus { status: WordStatus | 'unknown' | 'name'; level?: LearningLevel }
+    const lemmaStatus = new Map<string, LiveStatus>()
     // Article tokens used for the page score (Readability when possible)
     let articleTokens: string[] = []
     let pageScore: PageScore | null = null
@@ -61,11 +66,14 @@ export default defineContentScript({
         return span.dataset.lemma || (span.dataset.word || '').toLowerCase()
       },
       statusFor(lemma) {
-        const s = lemmaStatus.get(lemma)
+        const s = lemmaStatus.get(lemma)?.status
         return s === 'name' ? 'unknown' : (s ?? 'unknown')
       },
+      levelFor(lemma) {
+        return lemmaStatus.get(lemma)?.level
+      },
       set(lemma, status, extras) {
-        lemmaStatus.set(lemma, status)
+        lemmaStatus.set(lemma, { status, level: status === 'learning' ? (extras?.level ?? 1) : undefined })
         repaintLemma(lemma)
         refreshScore()
         sendMessage({
@@ -74,6 +82,7 @@ export default defineContentScript({
             lang: settings!.targetLanguage,
             lemma,
             status,
+            level: extras?.level,
             translation: extras?.translation,
             context: extras?.context,
             source: extras?.translation ? 'click' : 'manual',
@@ -89,22 +98,24 @@ export default defineContentScript({
       const info = tokenInfo.get(token)
       if (!info) return undefined
       const live = lemmaStatus.get(info.lemma)
-      if (!live || live === info.status) return info
-      return { lemma: info.lemma, status: live }
+      if (!live || (live.status === info.status && live.level === info.level)) return info
+      return { lemma: info.lemma, status: live.status, level: live.level }
     }
 
-    function classFor(status: TokenInfo['status']): string {
-      if (status === 'unknown') return 'ci-unknown'
-      if (status === 'learning') return 'ci-learning'
+    const HIGHLIGHT_CLASSES = ['ci-unknown', 'ci-l1', 'ci-l2', 'ci-l3', 'ci-l4', 'ci-l5']
+
+    function classFor(info: TokenInfo): string {
+      if (info.status === 'unknown') return 'ci-unknown'
+      if (info.status === 'learning') return `ci-l${info.level ?? 1}`
       return ''
     }
 
     function paintSpan(span: HTMLElement) {
       const info = statusOf(span.dataset.word || '')
-      span.classList.remove('ci-unknown', 'ci-learning')
+      span.classList.remove(...HIGHLIGHT_CLASSES)
       if (!info) return
       span.dataset.lemma = info.lemma
-      const cls = classFor(info.status)
+      const cls = classFor(info)
       if (cls) span.classList.add(cls)
     }
 
@@ -148,7 +159,7 @@ export default defineContentScript({
       const affectedLemmas = new Set<string>()
       for (const [token, info] of Object.entries(result || {})) {
         tokenInfo.set(token, info)
-        if (!lemmaStatus.has(info.lemma)) lemmaStatus.set(info.lemma, info.status)
+        if (!lemmaStatus.has(info.lemma)) lemmaStatus.set(info.lemma, { status: info.status, level: info.level })
         affectedLemmas.add(info.lemma)
       }
       // Paint every span whose token just got resolved (progressively)
@@ -273,7 +284,7 @@ export default defineContentScript({
       }).catch(() => null)
       if (!resp) return
       for (const lemma of unknown) {
-        lemmaStatus.set(lemma, 'known')
+        lemmaStatus.set(lemma, { status: 'known' })
         repaintLemma(lemma)
       }
       refreshScore()

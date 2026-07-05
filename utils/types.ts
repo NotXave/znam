@@ -2,11 +2,14 @@
 
 export type WordStatus = 'learning' | 'known' | 'ignored'
 
+/** Lute-style learning stages: 1 = just met (red) … 5 = almost known (green). */
+export type LearningLevel = 1 | 2 | 3 | 4 | 5
+
 export interface WordRecord {
   lang: string
   lemma: string // IDB key [lang, lemma]
   status: WordStatus
-  level?: 1 | 2 | 3 // LingQ-style granularity, UI deferred to V2
+  level?: LearningLevel // only meaningful while status === 'learning'
   translation?: string
   context?: string
   source: 'click' | 'page-read' | 'calibration' | 'import' | 'manual'
@@ -18,6 +21,7 @@ export interface WordRecord {
 export interface TokenInfo {
   lemma: string
   status: WordStatus | 'unknown' | 'name'
+  level?: LearningLevel
 }
 
 export interface ScoreResult {
@@ -125,6 +129,7 @@ export type Message =
         lang: string
         lemma: string
         status: WordStatus | 'unknown' // 'unknown' deletes the record (reset)
+        level?: LearningLevel
         translation?: string
         context?: string
         source: WordRecord['source']
@@ -141,7 +146,7 @@ export type Message =
       type: 'IMPORT_WORDS'
       payload: {
         lang: string
-        entries: { lemmaOrForm: string; translation?: string; context?: string; status?: WordStatus }[]
+        entries: { lemmaOrForm: string; translation?: string; context?: string; status?: WordStatus; level?: LearningLevel }[]
         /** Default status for entries that don't carry their own. */
         status: WordStatus
       }

@@ -1,4 +1,4 @@
-import type { Message, Settings, TokenInfo, WordStatus } from '../utils/types'
+import type { LearningLevel, Message, Settings, TokenInfo, WordStatus } from '../utils/types'
 import { tokenize } from '../utils/tokenizer'
 import { difficultyLabel, scoreTokens } from '../utils/scoring'
 import { fetchCaptionText, fetchVideoInfo, pickTrack, videoIdFromUrl } from '../utils/youtube-captions'
@@ -28,8 +28,12 @@ const STYLE = `
 #ci-score-results:hover { background: #2d4a77; }
 .ytp-caption-window-container .ci-word { cursor: pointer; }
 .ytp-caption-window-container .ci-word:hover { text-decoration: underline dotted; }
-.ytp-caption-window-container .ci-word.ci-unknown { background: rgba(96, 145, 255, 0.4); border-radius: 3px; }
-.ytp-caption-window-container .ci-word.ci-learning { background: rgba(255, 213, 0, 0.4); border-radius: 3px; }
+.ytp-caption-window-container .ci-word.ci-unknown { background: rgba(96, 145, 255, 0.45); border-radius: 3px; }
+.ytp-caption-window-container .ci-word.ci-l1 { background: rgba(193, 75, 75, 0.55); border-radius: 3px; }
+.ytp-caption-window-container .ci-word.ci-l2 { background: rgba(193, 119, 75, 0.50); border-radius: 3px; }
+.ytp-caption-window-container .ci-word.ci-l3 { background: rgba(255, 213, 0, 0.45); border-radius: 3px; }
+.ytp-caption-window-container .ci-word.ci-l4 { background: rgba(143, 163, 46, 0.45); border-radius: 3px; }
+.ytp-caption-window-container .ci-word.ci-l5 { background: rgba(93, 158, 74, 0.40); border-radius: 3px; }
 `
 
 function send(msg: Message): Promise<any> {
@@ -68,19 +72,23 @@ export default defineContentScript({
     // time"). Pattern from language-reactor-clone's caption injection.
 
     const tokenInfo = new Map<string, TokenInfo>()
-    const lemmaStatus = new Map<string, WordStatus | 'unknown' | 'name'>()
+    interface LiveStatus { status: WordStatus | 'unknown' | 'name'; level?: LearningLevel }
+    const lemmaStatus = new Map<string, LiveStatus>()
 
     const statusApi: WordStatusApi = {
       lemmaFor(span) {
         return span.dataset.lemma || (span.dataset.word || '').toLowerCase()
       },
       statusFor(lemma) {
-        const s = lemmaStatus.get(lemma)
+        const s = lemmaStatus.get(lemma)?.status
         return s === 'name' ? 'unknown' : (s ?? 'unknown')
+      },
+      levelFor(lemma) {
+        return lemmaStatus.get(lemma)?.level
       },
       set(lemma, status, extras) {
         if (!settings) return
-        lemmaStatus.set(lemma, status)
+        lemmaStatus.set(lemma, { status, level: status === 'learning' ? (extras?.level ?? 1) : undefined })
         repaintLemma(lemma)
         send({
           type: 'SET_WORD_STATUS',
@@ -88,6 +96,7 @@ export default defineContentScript({
             lang: settings.targetLanguage,
             lemma,
             status,
+            level: extras?.level,
             translation: extras?.translation,
             context: extras?.context,
             source: extras?.translation ? 'click' : 'manual',
@@ -112,17 +121,19 @@ export default defineContentScript({
       const info = tokenInfo.get(token)
       if (!info) return undefined
       const live = lemmaStatus.get(info.lemma)
-      if (!live || live === info.status) return info
-      return { lemma: info.lemma, status: live }
+      if (!live || (live.status === info.status && live.level === info.level)) return info
+      return { lemma: info.lemma, status: live.status, level: live.level }
     }
+
+    const HIGHLIGHT_CLASSES = ['ci-unknown', 'ci-l1', 'ci-l2', 'ci-l3', 'ci-l4', 'ci-l5']
 
     function paintSpan(span: HTMLElement) {
       const info = statusOf(span.dataset.word || '')
-      span.classList.remove('ci-unknown', 'ci-learning')
+      span.classList.remove(...HIGHLIGHT_CLASSES)
       if (!info) return
       span.dataset.lemma = info.lemma
       if (info.status === 'unknown') span.classList.add('ci-unknown')
-      else if (info.status === 'learning') span.classList.add('ci-learning')
+      else if (info.status === 'learning') span.classList.add(`ci-l${info.level ?? 1}`)
     }
 
     function repaintLemma(lemma: string) {
@@ -162,7 +173,7 @@ export default defineContentScript({
       }).catch(() => ({}))
       for (const [t, info] of Object.entries(res || {})) {
         tokenInfo.set(t, info)
-        if (!lemmaStatus.has(info.lemma)) lemmaStatus.set(info.lemma, info.status)
+        if (!lemmaStatus.has(info.lemma)) lemmaStatus.set(info.lemma, { status: info.status, level: info.level })
       }
       for (const span of spans) {
         if (span.isConnected) paintSpan(span)
