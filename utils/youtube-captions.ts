@@ -1,4 +1,5 @@
 import { parseYouTubeJson3 } from './parser-json3'
+import type { SubtitleCue } from './types'
 
 export interface CaptionTrack {
   languageCode: string
@@ -68,8 +69,8 @@ export function pickTrack(tracks: CaptionTrack[], lang: string): CaptionTrack | 
   return matching.find(t => !t.isAsr) ?? matching[0]
 }
 
-/** Fetch a track as json3 and join the cue text. */
-export async function fetchCaptionText(baseUrl: string): Promise<string> {
+/** Fetch a track as json3 and return timed cues. */
+export async function fetchCaptionCues(baseUrl: string): Promise<SubtitleCue[]> {
   const url = baseUrl.includes('fmt=')
     ? baseUrl.replace(/fmt=\w+/, 'fmt=json3')
     : `${baseUrl}&fmt=json3`
@@ -77,7 +78,12 @@ export async function fetchCaptionText(baseUrl: string): Promise<string> {
   if (!resp.ok) throw new Error(`timedtext HTTP ${resp.status}`)
   const text = await resp.text()
   if (!text.trim()) throw new Error('timedtext empty (blocked)')
-  const cues = parseYouTubeJson3(JSON.parse(text))
+  return parseYouTubeJson3(JSON.parse(text))
+}
+
+/** Fetch a track as json3 and join the cue text. */
+export async function fetchCaptionText(baseUrl: string): Promise<string> {
+  const cues = await fetchCaptionCues(baseUrl)
   return cues.map(c => c.text).join(' ')
 }
 

@@ -33,9 +33,16 @@ i+1 sweet spot.
 - **YouTube** — watch pages get a score badge above the title (fetched from
   the video's subtitles in your target language), and the rendered subtitles
   themselves become clickable: words are highlighted by status, clicking
-  pauses the video and opens the tooltip with Learning/Known/Ignore buttons —
-  marking words while watching refines your knowledge over time. On browse
-  and search pages a "% Score results" button badges up to 30 thumbnails.
+  pauses the video and opens the tooltip with level/Known/Ignore buttons —
+  marking words while watching refines your knowledge over time. The **📌
+  Subtitles** button opens a pinned panel below the video: the current line
+  with clickable/colored words and its translation, plus previous/replay/next
+  line controls and an auto-pause-per-line toggle. On browse and search pages
+  a "% Score results" button badges up to 30 thumbnails.
+
+- **Comprehension score** is weighted by learning stage — known words count
+  fully, learning stages 1–5 count 20–100 % — so studying words you're
+  learning raises the score instead of leaving everything at "hard".
 - **Bootstrap your knowledge** three ways (app page):
   - *Calibrate*: a ~35-word frequency quiz estimates "you know the top N
     words" (logistic fit), adjustable before applying.

@@ -1,4 +1,4 @@
-import type { ScoreResult, TokenInfo } from './types'
+import type { LearningLevel, ScoreResult, TokenInfo, WordStatus } from './types'
 
 export interface PageScore extends ScoreResult {
   /** lemma → token count over countable tokens (persisted for rescoring). */
@@ -6,13 +6,26 @@ export interface PageScore extends ScoreResult {
 }
 
 /**
- * Token-based comprehensibility: known tokens / countable tokens.
+ * How comprehensible a word is, 0..1. Known words count fully; learning words
+ * count proportionally to their stage (L5 ≈ known, L1 ≈ just met) so progress
+ * on words you're studying raises the score instead of leaving everything
+ * stuck at "hard".
+ */
+export function comprehensionWeight(status: WordStatus | 'unknown' | 'name', level?: LearningLevel): number {
+  if (status === 'known') return 1
+  if (status === 'learning') return (level ?? 1) / 5
+  return 0 // unknown
+}
+
+/**
+ * Comprehensibility = summed comprehension weight / countable tokens.
  * Names and ignored lemmas are excluded from the denominator.
  */
 export function scoreTokens(
   tokens: string[],
   infoFor: (token: string) => TokenInfo | undefined,
 ): PageScore {
+  let weighted = 0
   let known = 0
   let learning = 0
   let unknown = 0
@@ -23,6 +36,7 @@ export function scoreTokens(
     const info = infoFor(token)
     if (!info || info.status === 'name' || info.status === 'ignored') continue
     lemmaCounts[info.lemma] = (lemmaCounts[info.lemma] || 0) + 1
+    weighted += comprehensionWeight(info.status, info.level)
     if (info.status === 'known') known++
     else if (info.status === 'learning') learning++
     else {
@@ -33,7 +47,7 @@ export function scoreTokens(
 
   const countable = known + learning + unknown
   return {
-    score: countable > 0 ? known / countable : 0,
+    score: countable > 0 ? weighted / countable : 0,
     countableTokens: countable,
     knownTokens: known,
     learningTokens: learning,
@@ -51,23 +65,35 @@ export function difficultyLabel(score: number): 'hard' | 'challenging' | 'sweet 
   return 'easy'
 }
 
+export interface LemmaStatus {
+  status: WordStatus
+  level?: LearningLevel
+}
+
 /** Rescore a stored lemmaCounts blob against the current word statuses. */
 export function rescoreLemmaCounts(
   lemmaCounts: Record<string, number>,
-  statusFor: (lemma: string) => 'learning' | 'known' | 'ignored' | undefined,
+  statusFor: (lemma: string) => LemmaStatus | undefined,
 ): { score: number; knownTokens: number; countableTokens: number; unknownLemmas: number } {
+  let weighted = 0
   let known = 0
   let countable = 0
   let unknownLemmas = 0
   for (const [lemma, count] of Object.entries(lemmaCounts)) {
-    const status = statusFor(lemma)
-    if (status === 'ignored') continue
+    const s = statusFor(lemma)
+    if (s?.status === 'ignored') continue
     countable += count
-    if (status === 'known') known += count
-    else if (status !== 'learning') unknownLemmas++
+    if (s?.status === 'known') {
+      weighted += count
+      known += count
+    } else if (s?.status === 'learning') {
+      weighted += count * comprehensionWeight('learning', s.level)
+    } else {
+      unknownLemmas++
+    }
   }
   return {
-    score: countable > 0 ? known / countable : 0,
+    score: countable > 0 ? weighted / countable : 0,
     knownTokens: known,
     countableTokens: countable,
     unknownLemmas,

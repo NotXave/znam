@@ -1,7 +1,8 @@
 import type { LearningLevel, Message, Settings, TokenInfo, WordStatus } from '../utils/types'
 import { tokenize } from '../utils/tokenizer'
 import { difficultyLabel, scoreTokens } from '../utils/scoring'
-import { fetchCaptionText, fetchVideoInfo, pickTrack, videoIdFromUrl } from '../utils/youtube-captions'
+import { fetchCaptionCues, fetchVideoInfo, pickTrack, videoIdFromUrl } from '../utils/youtube-captions'
+import type { SubtitleCue } from '../utils/types'
 import { ReaderTooltip, type WordStatusApi } from '../shared/tooltip'
 import { collectTextNodes, wrapTextNode } from '../shared/word-wrapper'
 
@@ -34,6 +35,34 @@ const STYLE = `
 .ytp-caption-window-container .ci-word.ci-l3 { background: rgba(255, 213, 0, 0.45); border-radius: 3px; }
 .ytp-caption-window-container .ci-word.ci-l4 { background: rgba(143, 163, 46, 0.45); border-radius: 3px; }
 .ytp-caption-window-container .ci-word.ci-l5 { background: rgba(93, 158, 74, 0.40); border-radius: 3px; }
+#ci-yt-badge .ci-panel-toggle {
+  margin-left: 8px; padding: 1px 8px; border: 0; border-radius: 10px;
+  background: #2d4a77; color: #cfe3ff; font-size: 12px; cursor: pointer;
+}
+#ci-yt-badge .ci-panel-toggle:hover { background: #3a5d94; }
+#ci-sub-panel {
+  margin: 0 0 12px; padding: 12px 16px; border-radius: 12px;
+  background: #14141f; color: #eee; font-family: "Roboto", sans-serif;
+}
+#ci-sub-panel .ci-sub-target { font-size: 20px; line-height: 1.5; }
+#ci-sub-panel .ci-sub-target .ci-word { cursor: pointer; }
+#ci-sub-panel .ci-sub-target .ci-word:hover { text-decoration: underline dotted; }
+#ci-sub-panel .ci-sub-target .ci-word.ci-unknown { background: rgba(96,145,255,0.22); border-radius: 3px; }
+#ci-sub-panel .ci-sub-target .ci-word.ci-l1 { background: rgba(193,75,75,0.30); border-radius: 3px; }
+#ci-sub-panel .ci-sub-target .ci-word.ci-l2 { background: rgba(193,119,75,0.28); border-radius: 3px; }
+#ci-sub-panel .ci-sub-target .ci-word.ci-l3 { background: rgba(255,213,0,0.28); border-radius: 3px; }
+#ci-sub-panel .ci-sub-target .ci-word.ci-l4 { background: rgba(143,163,46,0.26); border-radius: 3px; }
+#ci-sub-panel .ci-sub-target .ci-word.ci-l5 { background: rgba(93,158,74,0.22); border-radius: 3px; }
+#ci-sub-panel .ci-sub-native { color: #9ab; font-size: 15px; margin-top: 6px; min-height: 18px; }
+#ci-sub-panel .ci-sub-controls { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+#ci-sub-panel .ci-sub-controls button {
+  background: #242440; color: #cfe3ff; border: 0; border-radius: 6px;
+  padding: 5px 10px; font-size: 13px; cursor: pointer;
+}
+#ci-sub-panel .ci-sub-controls button:hover { background: #2d4a77; }
+#ci-sub-panel .ci-sub-controls button.active { background: #2d6e3e; }
+#ci-sub-panel .ci-sub-controls .ci-sub-spacer { flex: 1; }
+#ci-sub-panel .ci-sub-hint { color: #666; font-size: 11px; }
 `
 
 function send(msg: Message): Promise<any> {
@@ -206,6 +235,168 @@ export default defineContentScript({
       captionObserver = null
     }
 
+    // ── Pinned subtitle panel (Language-Reactor-style) ──────
+    // A stable, always-visible panel below the video: the current subtitle
+    // line with clickable/colored words + its translation + line controls,
+    // and an optional auto-pause at the end of each line. Uses the timed cues
+    // fetched for scoring, synced to the video clock.
+
+    let activeCues: SubtitleCue[] = []
+    let subtitlePanelOn = false
+    let autoPause = false
+    let panel: HTMLElement | null = null
+    let panelRaf = 0
+    let panelCueIndex = -1
+    let lastPauseCue = -1
+    const nativeCache = new Map<number, string>()
+
+    function video(): HTMLVideoElement | null {
+      return document.querySelector('video.html5-main-video') || document.querySelector('video')
+    }
+
+    function panelHost(): HTMLElement | null {
+      return badgeHost()
+    }
+
+    function cueIndexAt(t: number): number {
+      // Last cue whose start is ≤ t (keeps the previous line pinned in gaps)
+      let idx = -1
+      for (let i = 0; i < activeCues.length; i++) {
+        if (activeCues[i].start <= t + 0.05) idx = i
+        else break
+      }
+      return idx
+    }
+
+    function toggleSubtitlePanel() {
+      if (subtitlePanelOn) closeSubtitlePanel()
+      else openSubtitlePanel()
+    }
+
+    function openSubtitlePanel() {
+      subtitlePanelOn = true
+      if (activeCues.length === 0) return
+      if (!panel) {
+        const host = panelHost()
+        if (!host) return
+        panel = document.createElement('div')
+        panel.id = 'ci-sub-panel'
+        if (settings) {
+          panel.dataset.from = settings.targetLanguage
+          panel.dataset.to = settings.nativeLanguage
+        }
+        panel.innerHTML = `
+          <div class="ci-sub-target"></div>
+          <div class="ci-sub-native"></div>
+          <div class="ci-sub-controls">
+            <button class="ci-prev" title="Previous line">⏮</button>
+            <button class="ci-replay" title="Replay this line">🔁</button>
+            <button class="ci-playpause" title="Play / pause">⏯</button>
+            <button class="ci-next" title="Next line">⏭</button>
+            <button class="ci-autopause" title="Pause at the end of every line">⏸ Auto-pause</button>
+            <span class="ci-sub-spacer"></span>
+            <span class="ci-sub-hint">click a word to look it up & mark it</span>
+            <button class="ci-close" title="Hide panel">✕</button>
+          </div>`
+        host.prepend(panel)
+        panel.querySelector('.ci-prev')!.addEventListener('click', () => seekCue(panelCueIndex - 1))
+        panel.querySelector('.ci-replay')!.addEventListener('click', () => seekCue(panelCueIndex))
+        panel.querySelector('.ci-next')!.addEventListener('click', () => seekCue(panelCueIndex + 1))
+        panel.querySelector('.ci-playpause')!.addEventListener('click', () => {
+          const v = video()
+          if (v) v.paused ? v.play() : v.pause()
+        })
+        panel.querySelector('.ci-autopause')!.addEventListener('click', (e) => {
+          autoPause = !autoPause
+          ;(e.currentTarget as HTMLElement).classList.toggle('active', autoPause)
+        })
+        panel.querySelector('.ci-close')!.addEventListener('click', closeSubtitlePanel)
+      }
+      panelCueIndex = -1
+      startPanelLoop()
+    }
+
+    function closeSubtitlePanel() {
+      subtitlePanelOn = false
+      cancelAnimationFrame(panelRaf)
+      panelRaf = 0
+      panel?.remove()
+      panel = null
+    }
+
+    function seekCue(index: number) {
+      const i = Math.max(0, Math.min(activeCues.length - 1, index))
+      const v = video()
+      if (v && activeCues[i]) {
+        v.currentTime = activeCues[i].start + 0.01
+        lastPauseCue = i // don't immediately auto-pause the line we jumped to
+        v.play()
+      }
+    }
+
+    function startPanelLoop() {
+      cancelAnimationFrame(panelRaf)
+      const tick = () => {
+        if (!subtitlePanelOn) return
+        const v = video()
+        if (v && activeCues.length) {
+          const idx = cueIndexAt(v.currentTime)
+          if (idx !== panelCueIndex && idx >= 0) {
+            panelCueIndex = idx
+            renderPanelCue(idx)
+          }
+          // Auto-pause once, just past the end of the current line
+          if (autoPause && idx >= 0 && idx !== lastPauseCue &&
+              v.currentTime >= activeCues[idx].end - 0.05 && !v.paused) {
+            lastPauseCue = idx
+            v.pause()
+          }
+        }
+        panelRaf = requestAnimationFrame(tick)
+      }
+      panelRaf = requestAnimationFrame(tick)
+    }
+
+    async function renderPanelCue(index: number) {
+      if (!panel || !settings) return
+      const cue = activeCues[index]
+      if (!cue) return
+      const target = panel.querySelector('.ci-sub-target') as HTMLElement
+      const native = panel.querySelector('.ci-sub-native') as HTMLElement
+
+      // Render + wrap the target line, then analyze & paint statuses
+      target.textContent = cue.text
+      const spans: HTMLElement[] = []
+      for (const node of collectTextNodes(target)) spans.push(...wrapTextNode(node))
+      const pending = [...new Set(spans.map(s => s.dataset.word || '').filter(w => w && !tokenInfo.has(w)))]
+      for (const s of spans) paintSpan(s)
+      if (pending.length) {
+        const res: Record<string, TokenInfo> = await send({
+          type: 'ANALYZE_TOKENS',
+          payload: { lang: settings.targetLanguage, tokens: pending },
+        }).catch(() => ({}))
+        for (const [t, info] of Object.entries(res || {})) {
+          tokenInfo.set(t, info)
+          if (!lemmaStatus.has(info.lemma)) lemmaStatus.set(info.lemma, { status: info.status, level: info.level })
+        }
+        if (panelCueIndex === index) for (const s of spans) if (s.isConnected) paintSpan(s)
+      }
+
+      // Translation of the whole line (cached per cue)
+      if (nativeCache.has(index)) {
+        native.textContent = nativeCache.get(index)!
+      } else {
+        native.textContent = '…'
+        const r = await send({
+          type: 'TRANSLATE',
+          payload: { text: cue.text, from: settings.targetLanguage, to: settings.nativeLanguage },
+        }).catch(() => null)
+        const translated = (r && typeof r === 'object' ? r.text : '') || ''
+        nativeCache.set(index, translated)
+        if (panelCueIndex === index) native.textContent = translated
+      }
+    }
+
     // ── Watch page badge ────────────────────────────────────
 
     function badgeHost(): HTMLElement | null {
@@ -253,8 +444,10 @@ export default defineContentScript({
           setBadge(`<span class="ci-label">no ${lang} subs</span>`)
           return
         }
-        const text = await fetchCaptionText(track.baseUrl)
+        const cues = await fetchCaptionCues(track.baseUrl)
         if (videoId !== currentVideoId) return
+        activeCues = cues
+        const text = cues.map(c => c.text).join(' ')
         const tokens = tokenize(text)
         const info = await analyzeAll(lang, tokens)
         if (videoId !== currentVideoId) return
@@ -264,7 +457,13 @@ export default defineContentScript({
           return
         }
         const pct = Math.round(score.score * 100)
-        setBadge(`${pct}% <span class="ci-label">${difficultyLabel(score.score)}${track.isAsr ? ' · auto-subs' : ''}</span>`)
+        setBadge(
+          `${pct}% <span class="ci-label">${difficultyLabel(score.score)}${track.isAsr ? ' · auto-subs' : ''}</span>` +
+          `<button class="ci-panel-toggle" title="Show a pinned, clickable subtitle panel below the video">📌 Subtitles</button>`,
+        )
+        document.getElementById('ci-yt-badge')?.querySelector('.ci-panel-toggle')
+          ?.addEventListener('click', toggleSubtitlePanel)
+        if (subtitlePanelOn) openSubtitlePanel()
 
         send({
           type: 'SAVE_LIBRARY_ENTRY',
@@ -298,6 +497,14 @@ export default defineContentScript({
         currentVideoId = videoId
         document.getElementById('ci-yt-badge')?.remove()
         document.getElementById('ci-score-results')?.remove()
+        // New video: drop the old cues/translations; keep the panel open if
+        // the user had it on (it repopulates once the new cues load).
+        activeCues = []
+        nativeCache.clear()
+        panelCueIndex = -1
+        lastPauseCue = -1
+        panel?.remove()
+        panel = null
         startCaptionReader()
         // The metadata section renders shortly after yt-navigate-finish;
         // after ~5s we score anyway and fall back to the floating badge.
@@ -310,6 +517,8 @@ export default defineContentScript({
       } else {
         currentVideoId = null
         document.getElementById('ci-yt-badge')?.remove()
+        closeSubtitlePanel()
+        activeCues = []
         stopCaptionReader()
         // Any browse surface with thumbnails can be scored on demand
         ensureScoreResultsButton()

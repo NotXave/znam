@@ -58,8 +58,8 @@ async function renderLibrary() {
   if (!Array.isArray(entries)) return
 
   // Live rescoring against current knowledge — no refetching pages
-  const statusMap = new Map<string, WordStatus>()
-  for (const w of words ?? []) statusMap.set(w.lemma, w.status)
+  const statusMap = new Map<string, { status: WordStatus; level?: typeof words[number]['level'] }>()
+  for (const w of words ?? []) statusMap.set(w.lemma, { status: w.status, level: w.level })
   const scored = entries.map(e => {
     const r = rescoreLemmaCounts(e.lemmaCounts || {}, l => statusMap.get(l))
     return { ...e, score: r.countableTokens > 0 ? r.score : e.score, unknownLemmas: r.unknownLemmas }
