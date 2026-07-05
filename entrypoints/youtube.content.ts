@@ -132,6 +132,13 @@ export default defineContentScript({
           },
         }).catch(() => {})
       },
+      setTranslation(lemma, translation) {
+        if (!settings) return
+        send({
+          type: 'SET_WORD_TRANSLATION',
+          payload: { lang: settings.targetLanguage, lemma, translation },
+        }).catch(() => {})
+      },
     }
 
     const tooltip = new ReaderTooltip(send, statusApi)

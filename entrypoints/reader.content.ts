@@ -89,6 +89,13 @@ export default defineContentScript({
           },
         }).catch(() => {})
       },
+      setTranslation(lemma, translation) {
+        if (!settings) return
+        sendMessage({
+          type: 'SET_WORD_TRANSLATION',
+          payload: { lang: settings.targetLanguage, lemma, translation },
+        }).catch(() => {})
+      },
     }
 
     const tooltip = new ReaderTooltip(sendMessage, statusApi)

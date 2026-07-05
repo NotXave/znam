@@ -136,6 +136,7 @@ export type Message =
         source: WordRecord['source']
       }
     }
+  | { type: 'SET_WORD_TRANSLATION'; payload: { lang: string; lemma: string; translation: string } }
   | { type: 'MARK_PAGE_READ'; payload: { lang: string; lemmas: string[] } }
   | { type: 'SAVE_LIBRARY_ENTRY'; payload: Omit<LibraryEntry, 'createdAt' | 'updatedAt'> }
   | { type: 'GET_LIBRARY'; payload: { lang?: string } }

@@ -28,6 +28,8 @@ export interface WordStatusApi {
     status: WordStatus | 'unknown',
     extras?: { translation?: string; context?: string; level?: LearningLevel },
   ): void
+  /** Persist a chosen translation without touching status/level. */
+  setTranslation(lemma: string, translation: string): void
 }
 
 const BLOCK_SELECTOR = 'p,li,blockquote,h1,h2,h3,h4,h5,h6,td,dd,figcaption,article,div'
@@ -449,6 +451,8 @@ export class ReaderTooltip {
         })
         const activeCheck = item.querySelector('.ci-check') as HTMLElement | null
         if (activeCheck) activeCheck.style.color = '#8ab4f8'
+        // Persist the chosen translation for this word (words only, not phrases)
+        if (this.activeLemma && val) this.statusApi.setTranslation(this.activeLemma, val)
         this.ddOpen = false
         body.style.display = 'none'
         if (arrow) arrow.style.transform = 'rotate(0deg)'

@@ -110,6 +110,29 @@ async function setWordStatus(payload: Extract<Message, { type: 'SET_WORD_STATUS'
   return { ok: true }
 }
 
+/**
+ * Persist a chosen translation without changing status/level. If the word
+ * isn't tracked yet (e.g. the alternative was picked before auto-save landed),
+ * create it as learning-1 — same intent as clicking the word.
+ */
+async function setWordTranslation(payload: { lang: string; lemma: string; translation: string }): Promise<{ ok: true }> {
+  const { lang, lemma, translation } = payload
+  const statuses = await statusMapFor(lang)
+  const existing = await getWord(lang, lemma)
+  const now = Date.now()
+  const status = existing?.status ?? 'learning'
+  const level = status === 'learning' ? (existing?.level ?? 1) : undefined
+  await putWords([{
+    lang, lemma, status, level, translation,
+    context: existing?.context,
+    source: existing?.source ?? 'click',
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  }])
+  if (!statuses.has(lemma)) statuses.set(lemma, { status, level })
+  return { ok: true }
+}
+
 async function markPageRead(lang: string, lemmas: string[]): Promise<{ promoted: number }> {
   const statuses = await statusMapFor(lang)
   const now = Date.now()
@@ -232,6 +255,9 @@ export default defineBackground(() => {
 
         case 'SET_WORD_STATUS':
           return await setWordStatus(message.payload)
+
+        case 'SET_WORD_TRANSLATION':
+          return await setWordTranslation(message.payload)
 
         case 'MARK_PAGE_READ':
           return await markPageRead(message.payload.lang, message.payload.lemmas)
