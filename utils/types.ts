@@ -82,6 +82,8 @@ export interface Settings {
   primaryTranslation: 'google' | 'reverso' | 'deepl'
   /** Hostnames where the reader activates automatically. */
   autoHosts: string[]
+  /** On YouTube Shorts: auto-skip videos without target-language subtitles. */
+  shortsAutoSkip: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -89,6 +91,7 @@ export const DEFAULT_SETTINGS: Settings = {
   nativeLanguage: 'de',
   primaryTranslation: 'google',
   autoHosts: [],
+  shortsAutoSkip: true,
 }
 
 // ── Lookup results (reused from manga-translator) ───────────

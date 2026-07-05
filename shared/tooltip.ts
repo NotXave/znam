@@ -57,6 +57,7 @@ export class ReaderTooltip {
   private activeWord = ''
   private activeLemma = ''
   private openedAtScrollY = 0
+  private lastClickedSpan: HTMLElement | null = null
 
   constructor(
     private sendMessage: (msg: Message) => Promise<any>,
@@ -88,8 +89,30 @@ export class ReaderTooltip {
       if (ReaderTooltip.hasSelection()) return // selection in progress → handled on mouseup
       e.preventDefault()
       e.stopPropagation()
+
+      // Shift-click: phrase from the previously clicked word to this one —
+      // works even where the site blocks drag-selection (video captions).
+      if (e.shiftKey && this.lastClickedSpan && this.lastClickedSpan !== span && this.lastClickedSpan.isConnected) {
+        const all = Array.from(document.querySelectorAll('.ci-word')) as HTMLElement[]
+        let a = all.indexOf(this.lastClickedSpan)
+        let b = all.indexOf(span)
+        if (a >= 0 && b >= 0) {
+          if (a > b) [a, b] = [b, a]
+          const phrase = all.slice(a, b + 1)
+            .map(w => (w.getAttribute('data-word') || w.textContent || '').trim())
+            .filter(Boolean)
+            .join(' ')
+          if (phrase && phrase.length <= 300) {
+            const rect = span.getBoundingClientRect()
+            this.startLookup(phrase, rect.left, rect.bottom + 4, true, targetForSpan(span))
+            return
+          }
+        }
+      }
+
       const word = span.getAttribute('data-word') || span.textContent
       if (!word || !word.trim()) return
+      this.lastClickedSpan = span
       const rect = span.getBoundingClientRect()
       this.startLookup(word.trim(), rect.left, rect.bottom + 4, false, targetForSpan(span), span)
     }, true)

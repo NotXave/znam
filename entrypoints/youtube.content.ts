@@ -27,6 +27,10 @@ const STYLE = `
   box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 }
 #ci-score-results:hover { background: #2d4a77; }
+/* YouTube blocks text selection in captions — re-enable it so drag-select works */
+.ytp-caption-window-container, .ytp-caption-window-container * {
+  user-select: text !important; -webkit-user-select: text !important; -moz-user-select: text !important;
+}
 .ytp-caption-window-container .ci-word { cursor: pointer; }
 .ytp-caption-window-container .ci-word:hover { text-decoration: underline dotted; }
 .ytp-caption-window-container .ci-word.ci-unknown { background: rgba(96, 145, 255, 0.45); border-radius: 3px; }
@@ -63,6 +67,32 @@ const STYLE = `
 #ci-sub-panel .ci-sub-controls button.active { background: #2d6e3e; }
 #ci-sub-panel .ci-sub-controls .ci-sub-spacer { flex: 1; }
 #ci-sub-panel .ci-sub-hint { color: #666; font-size: 11px; }
+#ci-shorts-overlay {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: 8%; z-index: 2147483000; max-width: min(560px, 92vw);
+  background: rgba(20, 20, 31, 0.94); color: #eee; border-radius: 12px;
+  padding: 10px 16px; font-family: "Roboto", sans-serif;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5); text-align: center;
+}
+#ci-shorts-overlay .ci-sub-target { font-size: 18px; line-height: 1.5; }
+#ci-shorts-overlay .ci-sub-target .ci-word { cursor: pointer; }
+#ci-shorts-overlay .ci-sub-target .ci-word:hover { text-decoration: underline dotted; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-unknown { background: rgba(96,145,255,0.30); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-l1 { background: rgba(193,75,75,0.40); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-l2 { background: rgba(193,119,75,0.38); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-l3 { background: rgba(255,213,0,0.35); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-l4 { background: rgba(143,163,46,0.35); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-l5 { background: rgba(93,158,74,0.30); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-native { color: #9ab; font-size: 13px; margin-top: 4px; min-height: 16px; }
+#ci-shorts-overlay .ci-shorts-status { color: #8ab4f8; font-size: 13px; }
+#ci-shorts-overlay .ci-shorts-bar {
+  display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 6px;
+}
+#ci-shorts-overlay .ci-shorts-bar button {
+  background: #242440; color: #cfe3ff; border: 0; border-radius: 6px;
+  padding: 3px 9px; font-size: 11px; cursor: pointer;
+}
+#ci-shorts-overlay .ci-shorts-bar button.active { background: #2d6e3e; }
 `
 
 function send(msg: Message): Promise<any> {
@@ -318,7 +348,7 @@ export default defineContentScript({
             <button class="ci-next" title="Next line">⏭</button>
             <button class="ci-autopause" title="Pause at the end of every line">⏸ Auto-pause</button>
             <span class="ci-sub-spacer"></span>
-            <span class="ci-sub-hint">click a word to look it up & mark it</span>
+            <span class="ci-sub-hint">click = look up · shift-click = phrase</span>
             <button class="ci-close" title="Hide panel">✕</button>
           </div>`
         host.prepend(panel)
@@ -420,6 +450,170 @@ export default defineContentScript({
       }
     }
 
+    // ── Shorts immersion mode ───────────────────────────────
+    // On youtube.com/shorts: the personalized Shorts feed becomes a target-
+    // language immersion feed — shorts without target-language subtitles are
+    // auto-skipped (toggleable), and a clickable subtitle overlay with the
+    // line's translation is synced over the video.
+
+    let shortsCues: SubtitleCue[] = []
+    let shortsCueIndex = -1
+    let shortsRaf = 0
+    let shortsOverlay: HTMLElement | null = null
+    const shortsNativeCache = new Map<number, string>()
+
+    function shortsVideo(): HTMLVideoElement | null {
+      const vids = Array.from(document.querySelectorAll<HTMLVideoElement>('video'))
+      return vids.find(v => !v.paused && v.offsetParent) || vids.find(v => v.offsetParent) || null
+    }
+
+    function clickNextShort() {
+      const btn =
+        document.querySelector<HTMLElement>('#navigation-button-down button') ||
+        document.querySelector<HTMLElement>('button[aria-label="Next video"], button[aria-label="Nächstes Video"]')
+      btn?.click()
+    }
+
+    function ensureShortsOverlay(): HTMLElement {
+      if (shortsOverlay?.isConnected) return shortsOverlay
+      shortsOverlay = document.createElement('div')
+      shortsOverlay.id = 'ci-shorts-overlay'
+      if (settings) {
+        shortsOverlay.dataset.from = settings.targetLanguage
+        shortsOverlay.dataset.to = settings.nativeLanguage
+      }
+      shortsOverlay.innerHTML = `
+        <div class="ci-shorts-status"></div>
+        <div class="ci-sub-target"></div>
+        <div class="ci-sub-native"></div>
+        <div class="ci-shorts-bar">
+          <button class="ci-skip-toggle" title="Automatically skip shorts without target-language subtitles"></button>
+          <button class="ci-skip-now" title="Skip this short">⏭ Skip</button>
+        </div>`
+      document.body.appendChild(shortsOverlay)
+      const skipToggle = shortsOverlay.querySelector('.ci-skip-toggle') as HTMLElement
+      const renderToggle = () => {
+        const on = !!settings?.shortsAutoSkip
+        skipToggle.textContent = on ? `✓ ${settings?.targetLanguage ?? ''} only` : `${settings?.targetLanguage ?? ''} only: off`
+        skipToggle.classList.toggle('active', on)
+      }
+      renderToggle()
+      skipToggle.addEventListener('click', async () => {
+        if (!settings) return
+        settings = { ...settings, shortsAutoSkip: !settings.shortsAutoSkip }
+        renderToggle()
+        const { saveSettings } = await import('../utils/settings')
+        saveSettings(settings).catch(() => {})
+      })
+      shortsOverlay.querySelector('.ci-skip-now')!.addEventListener('click', clickNextShort)
+      return shortsOverlay
+    }
+
+    function setShortsStatus(text: string) {
+      const el = shortsOverlay?.querySelector('.ci-shorts-status') as HTMLElement | null
+      if (el) el.textContent = text
+    }
+
+    function closeShortsOverlay() {
+      cancelAnimationFrame(shortsRaf)
+      shortsRaf = 0
+      shortsOverlay?.remove()
+      shortsOverlay = null
+      shortsCues = []
+      shortsCueIndex = -1
+      shortsNativeCache.clear()
+    }
+
+    async function handleShort(videoId: string) {
+      cancelAnimationFrame(shortsRaf)
+      shortsCues = []
+      shortsCueIndex = -1
+      shortsNativeCache.clear()
+      if (!settings) settings = await send({ type: 'GET_SETTINGS' })
+      if (!settings || videoId !== currentVideoId) return
+      const lang = settings.targetLanguage
+      const overlay = ensureShortsOverlay()
+      ;(overlay.querySelector('.ci-sub-target') as HTMLElement).textContent = ''
+      ;(overlay.querySelector('.ci-sub-native') as HTMLElement).textContent = ''
+      setShortsStatus('⏳')
+
+      try {
+        const video = await fetchVideoInfo(videoId)
+        if (videoId !== currentVideoId) return
+        const track = pickTrack(video.tracks, lang)
+        if (!track) {
+          setShortsStatus(`no ${lang} subs`)
+          if (settings.shortsAutoSkip) setTimeout(() => {
+            if (videoId === currentVideoId) clickNextShort()
+          }, 700)
+          return
+        }
+        const cues = await fetchCaptionCues(track.baseUrl)
+        if (videoId !== currentVideoId) return
+        shortsCues = cues
+        setShortsStatus('')
+
+        // Analyze all subtitle tokens up-front (paints + exposures)
+        const tokens = tokenize(cues.map(c => c.text).join(' '))
+        const info = await analyzeAll(lang, tokens)
+        for (const [t, inf] of info) {
+          tokenInfo.set(t, inf)
+          if (!lemmaStatus.has(inf.lemma)) lemmaStatus.set(inf.lemma, { status: inf.status, level: inf.level })
+          if (inf.status === 'learning') videoExposureLemmas.add(inf.lemma)
+        }
+        startShortsSync()
+      } catch (err) {
+        console.warn('[znam shorts]', err)
+        if (videoId === currentVideoId) setShortsStatus('n/a')
+      }
+    }
+
+    function startShortsSync() {
+      cancelAnimationFrame(shortsRaf)
+      const tick = () => {
+        if (!shortsOverlay?.isConnected) return
+        const v = shortsVideo()
+        if (v && shortsCues.length) {
+          let idx = -1
+          for (let i = 0; i < shortsCues.length; i++) {
+            if (shortsCues[i].start <= v.currentTime + 0.05) idx = i
+            else break
+          }
+          if (idx !== shortsCueIndex && idx >= 0) {
+            shortsCueIndex = idx
+            renderShortsCue(idx)
+          }
+        }
+        shortsRaf = requestAnimationFrame(tick)
+      }
+      shortsRaf = requestAnimationFrame(tick)
+    }
+
+    async function renderShortsCue(index: number) {
+      if (!shortsOverlay || !settings) return
+      const cue = shortsCues[index]
+      if (!cue) return
+      const target = shortsOverlay.querySelector('.ci-sub-target') as HTMLElement
+      const native = shortsOverlay.querySelector('.ci-sub-native') as HTMLElement
+      target.textContent = cue.text
+      const spans: HTMLElement[] = []
+      for (const node of collectTextNodes(target)) spans.push(...wrapTextNode(node))
+      for (const s of spans) paintSpan(s)
+
+      if (shortsNativeCache.has(index)) {
+        native.textContent = shortsNativeCache.get(index)!
+      } else {
+        native.textContent = '…'
+        const r = await send({
+          type: 'TRANSLATE',
+          payload: { text: cue.text, from: settings.targetLanguage, to: settings.nativeLanguage },
+        }).catch(() => null)
+        const translated = (r && typeof r === 'object' ? r.text : '') || ''
+        shortsNativeCache.set(index, translated)
+        if (shortsCueIndex === index) native.textContent = translated
+      }
+    }
+
     // ── Watch page badge ────────────────────────────────────
 
     function badgeHost(): HTMLElement | null {
@@ -518,7 +712,23 @@ export default defineContentScript({
 
     function onNavigation() {
       const videoId = videoIdFromUrl(location.href)
+      const isShorts = location.pathname.startsWith('/shorts/')
       console.info('[znam] navigation:', location.pathname, videoId ?? '')
+
+      if (videoId && isShorts) {
+        if (videoId === currentVideoId) return
+        sendVideoExposures() // for the short we're leaving
+        currentVideoId = videoId
+        ytExposuresSent = false
+        document.getElementById('ci-yt-badge')?.remove()
+        document.getElementById('ci-score-results')?.remove()
+        closeSubtitlePanel()
+        stopCaptionReader()
+        handleShort(videoId)
+        return
+      }
+      closeShortsOverlay()
+
       if (videoId) {
         if (videoId === currentVideoId) return
         sendVideoExposures() // for the video we're leaving
@@ -617,6 +827,14 @@ export default defineContentScript({
     // ── Wire-up ─────────────────────────────────────────────
 
     document.addEventListener('yt-navigate-finish', () => setTimeout(onNavigation, 300))
+    // Shorts scrolling updates the URL without always firing navigate events
+    let lastHref = location.href
+    setInterval(() => {
+      if (location.href !== lastHref) {
+        lastHref = location.href
+        onNavigation()
+      }
+    }, 400)
     window.addEventListener('pagehide', sendVideoExposures)
     browser.runtime.onMessage.addListener((message: any, _sender, sendResponse) => {
       if (message?.type === 'SETTINGS_UPDATED') {

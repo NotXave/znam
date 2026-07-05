@@ -40,6 +40,12 @@ i+1 sweet spot.
   line controls and an auto-pause-per-line toggle. On browse and search pages
   a "% Score results" button badges up to 30 thumbnails.
 
+- **Shorts immersion feed** — on youtube.com/shorts your personalized feed
+  becomes a target-language feed: shorts without target-language subtitles
+  are auto-skipped (toggleable in the overlay), and a clickable subtitle
+  overlay with per-line translation floats over the video. Phrase lookup:
+  click the first word, shift-click the last.
+
 - **Comprehension score** is weighted two ways: by learning stage (known = 100 %,
   learning stages 1–5 = 20–100 %) and by word frequency (an unknown *rare* word
   barely dents the score; an unknown *common* word costs more) — so the i+1
