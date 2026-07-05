@@ -12,7 +12,7 @@ export interface ImportedEntry {
 }
 
 export interface ParsedVocabFile {
-  format: 'znam' | 'lute' | 'anki' | 'generic'
+  format: 'znam' | 'lute' | 'lute-db' | 'anki' | 'generic'
   entries: ImportedEntry[]
   /** Multi-word terms that were skipped (znam tracks single lemmas). */
   skippedPhrases: number

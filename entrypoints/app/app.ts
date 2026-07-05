@@ -367,7 +367,8 @@ async function init() {
       preview.hidden = true
       return
     }
-    const { format, skippedPhrases } = parsedImport
+    const { skippedPhrases } = parsedImport
+    const format = parsedImport.format === 'lute-db' ? 'Lute database' : parsedImport.format
     const entries = importEntries()
     const sample = entries
       .slice(0, 8)
@@ -386,8 +387,29 @@ async function init() {
 
   $('import-file').addEventListener('change', async () => {
     const file = $<HTMLInputElement>('import-file').files?.[0]
-    parsedImport = file ? parseVocabFile(await file.text()) : null
     $('import-result').textContent = ''
+    if (!file) {
+      parsedImport = null
+      renderImportPreview()
+      return
+    }
+    // Lute SQLite database → read via sql.js; everything else → text parse
+    if (/\.(db|sqlite\d?)$/i.test(file.name)) {
+      $('import-result').textContent = 'Reading Lute database…'
+      try {
+        const { parseLuteDb } = await import('../../utils/lute-db')
+        const lute = await parseLuteDb(await file.arrayBuffer())
+        parsedImport = { format: 'lute-db', entries: lute.entries, skippedPhrases: lute.skippedPhrases }
+        $('import-result').textContent = lute.languages.length
+          ? `Languages in this database: ${lute.languages.join(', ')}.`
+          : ''
+      } catch (err: any) {
+        parsedImport = null
+        $('import-result').textContent = `Could not read database: ${err?.message || err}`
+      }
+    } else {
+      parsedImport = parseVocabFile(await file.text())
+    }
     renderImportPreview()
   })
   $('import-swap').addEventListener('change', renderImportPreview)
@@ -398,7 +420,8 @@ async function init() {
       result.textContent = 'Pick a file first.'
       return
     }
-    const { format, skippedPhrases } = parsedImport
+    const { skippedPhrases } = parsedImport
+    const format = parsedImport.format === 'lute-db' ? 'Lute database' : parsedImport.format
     const entries = importEntries()
     // Rows may carry a language as a code ("pl") or a full name ("Polish",
     // Lute does this); import matching rows or rows without a language.

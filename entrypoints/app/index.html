@@ -78,14 +78,15 @@
         <div class="card">
           <h2>Import vocabulary</h2>
           <p class="hint">
-            Auto-detects the format: <b>Lute</b> term export (CSV — statuses are
-            mapped: 1–5 → learning, W → known, I → ignored), <b>Anki</b> "Notes in
-            Plain Text" export (first field = word, second = translation),
-            or the CSV from manga-translator / language-reactor-clone. Words are
-            lemmatized on import; existing entries are never downgraded;
-            multi-word terms are skipped.
+            Auto-detects the format: the <b>Lute database</b> (<code>lute.db</code>,
+            read directly), a <b>Lute</b> term CSV export, an <b>Anki</b> "Notes in
+            Plain Text" export, or the CSV from manga-translator /
+            language-reactor-clone. Statuses are mapped: 1–5 → learning stages,
+            W / Well&nbsp;Known → known, I → ignored. Words are lemmatized on
+            import; existing entries are never downgraded; multi-word terms are
+            skipped.
           </p>
-          <label>File <input type="file" id="import-file" accept=".csv,.txt,.tsv" /></label>
+          <label>File <input type="file" id="import-file" accept=".csv,.txt,.tsv,.db,.sqlite" /></label>
           <div id="import-preview" class="hint" hidden></div>
           <label class="checkbox" id="import-swap-row" hidden><input type="checkbox" id="import-swap" />
             Swap columns (my file has the translation first, the word second)</label>
