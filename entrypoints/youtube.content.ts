@@ -69,30 +69,40 @@ const STYLE = `
 #ci-sub-panel .ci-sub-hint { color: #666; font-size: 11px; }
 #ci-shorts-overlay {
   position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: 8%; z-index: 2147483000; max-width: min(560px, 92vw);
-  background: rgba(20, 20, 31, 0.94); color: #eee; border-radius: 12px;
-  padding: 10px 16px; font-family: "Roboto", sans-serif;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5); text-align: center;
+  bottom: 76px; z-index: 2147483000; width: min(460px, 46vw);
+  background: rgba(16, 16, 26, 0.90); backdrop-filter: blur(8px);
+  color: #eee; border-radius: 14px; padding: 12px 16px 10px;
+  font-family: "Roboto", sans-serif; box-shadow: 0 6px 26px rgba(0,0,0,0.55);
+  text-align: center; border: 1px solid rgba(255,255,255,0.06);
 }
-#ci-shorts-overlay .ci-sub-target { font-size: 18px; line-height: 1.5; }
+#ci-shorts-overlay .ci-shorts-top {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; margin-bottom: 6px;
+}
+#ci-shorts-overlay .ci-shorts-score { color: #cfe3ff; font-weight: 600; }
+#ci-shorts-overlay .ci-shorts-score .ci-warn { color: #e0a07b; }
+#ci-shorts-overlay .ci-shorts-session { color: #6a6a80; }
+#ci-shorts-overlay .ci-sub-target { font-size: 19px; line-height: 1.55; font-weight: 500; }
 #ci-shorts-overlay .ci-sub-target .ci-word { cursor: pointer; }
 #ci-shorts-overlay .ci-sub-target .ci-word:hover { text-decoration: underline dotted; }
-#ci-shorts-overlay .ci-sub-target .ci-word.ci-unknown { background: rgba(96,145,255,0.30); border-radius: 3px; }
-#ci-shorts-overlay .ci-sub-target .ci-word.ci-l1 { background: rgba(193,75,75,0.40); border-radius: 3px; }
-#ci-shorts-overlay .ci-sub-target .ci-word.ci-l2 { background: rgba(193,119,75,0.38); border-radius: 3px; }
-#ci-shorts-overlay .ci-sub-target .ci-word.ci-l3 { background: rgba(255,213,0,0.35); border-radius: 3px; }
-#ci-shorts-overlay .ci-sub-target .ci-word.ci-l4 { background: rgba(143,163,46,0.35); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-unknown { background: rgba(96,145,255,0.32); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-l1 { background: rgba(193,75,75,0.42); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-l2 { background: rgba(193,119,75,0.40); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-l3 { background: rgba(255,213,0,0.36); border-radius: 3px; }
+#ci-shorts-overlay .ci-sub-target .ci-word.ci-l4 { background: rgba(143,163,46,0.36); border-radius: 3px; }
 #ci-shorts-overlay .ci-sub-target .ci-word.ci-l5 { background: rgba(93,158,74,0.30); border-radius: 3px; }
-#ci-shorts-overlay .ci-sub-native { color: #9ab; font-size: 13px; margin-top: 4px; min-height: 16px; }
-#ci-shorts-overlay .ci-shorts-status { color: #8ab4f8; font-size: 13px; }
+#ci-shorts-overlay .ci-sub-native { color: #93a6bf; font-size: 14px; margin-top: 5px; min-height: 18px; }
 #ci-shorts-overlay .ci-shorts-bar {
-  display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 6px;
+  display: flex; gap: 6px; justify-content: center; align-items: center;
+  margin-top: 9px; flex-wrap: wrap;
 }
 #ci-shorts-overlay .ci-shorts-bar button {
-  background: #242440; color: #cfe3ff; border: 0; border-radius: 6px;
-  padding: 3px 9px; font-size: 11px; cursor: pointer;
+  background: rgba(255,255,255,0.08); color: #cfe3ff; border: 0; border-radius: 7px;
+  padding: 4px 10px; font-size: 12px; cursor: pointer; transition: background 0.12s;
 }
-#ci-shorts-overlay .ci-shorts-bar button.active { background: #2d6e3e; }
+#ci-shorts-overlay .ci-shorts-bar button:hover { background: rgba(255,255,255,0.16); }
+#ci-shorts-overlay .ci-shorts-bar button.active { background: #2d6e3e; color: #d7f5df; }
+@media (max-width: 900px) { #ci-shorts-overlay { width: min(440px, 88vw); } }
 `
 
 function send(msg: Message): Promise<any> {
@@ -162,6 +172,10 @@ export default defineContentScript({
       set(lemma, status, extras) {
         if (!settings) return
         ytInteracted.add(lemma)
+        if (location.pathname.startsWith('/shorts/')) {
+          shortsSessionMarks++
+          updateShortsSession()
+        }
         lemmaStatus.set(lemma, { status, level: status === 'learning' ? (extras?.level ?? 1) : undefined })
         repaintLemma(lemma)
         send({
@@ -190,14 +204,22 @@ export default defineContentScript({
     const tooltip = new ReaderTooltip(send, statusApi)
     tooltip.attach()
 
-    // Clicking a subtitle word pauses the video (ReaderTooltip only calls
-    // stopPropagation, so this capture listener still runs).
+    // Clicking a subtitle word pauses the video so you can read the tooltip
+    // (ReaderTooltip only calls stopPropagation, so this capture listener runs).
     document.addEventListener('click', (e) => {
       const t = e.target as HTMLElement
-      if (t.closest?.('.ci-word') && t.closest('.ytp-caption-window-container')) {
-        document.querySelector('video')?.pause()
+      if (t.closest?.('.ci-word') &&
+          t.closest('.ytp-caption-window-container, #ci-shorts-overlay, #ci-sub-panel')) {
+        (document.querySelector('video.html5-main-video') as HTMLVideoElement | null)?.pause()
+        ;(shortsVideoRef())?.pause()
       }
     }, true)
+
+    // shortsVideo() is declared later; this thin wrapper keeps the listener above it
+    function shortsVideoRef(): HTMLVideoElement | null {
+      const vids = Array.from(document.querySelectorAll<HTMLVideoElement>('video'))
+      return vids.find(v => v.offsetParent) || null
+    }
 
     function statusOf(token: string): TokenInfo | undefined {
       const info = tokenInfo.get(token)
@@ -451,16 +473,22 @@ export default defineContentScript({
     }
 
     // ── Shorts immersion mode ───────────────────────────────
-    // On youtube.com/shorts: the personalized Shorts feed becomes a target-
-    // language immersion feed — shorts without target-language subtitles are
-    // auto-skipped (toggleable), and a clickable subtitle overlay with the
-    // line's translation is synced over the video.
+    // On youtube.com/shorts the personalized feed becomes a target-language
+    // comprehensible-input feed: shorts are auto-skipped when they have no
+    // target-language subtitles OR are below your comprehension threshold
+    // (keeping you in the i+1 sweet spot). A clean overlay shows the current
+    // line (clickable, colored by status) + its translation, a difficulty
+    // chip, and immersion controls (loop, speed, difficulty gate).
 
     let shortsCues: SubtitleCue[] = []
     let shortsCueIndex = -1
     let shortsRaf = 0
     let shortsOverlay: HTMLElement | null = null
+    let shortsSessionMarks = 0
     const shortsNativeCache = new Map<number, string>()
+
+    const DIFF_STEPS = [0, 0.5, 0.7, 0.85] // "Any", ≥50%, ≥70%, ≥85%
+    const SPEED_STEPS = [0.75, 1, 1.25, 1.5]
 
     function shortsVideo(): HTMLVideoElement | null {
       const vids = Array.from(document.querySelectorAll<HTMLVideoElement>('video'))
@@ -474,6 +502,55 @@ export default defineContentScript({
       btn?.click()
     }
 
+    async function saveShortsSettings(patch: Partial<Settings>) {
+      if (!settings) return
+      settings = { ...settings, ...patch }
+      const { saveSettings } = await import('../utils/settings')
+      saveSettings(settings).catch(() => {})
+    }
+
+    // Apply persisted loop/speed to the live short's <video>
+    function applyPlaybackPrefs() {
+      const v = shortsVideo()
+      if (!v || !settings) return
+      v.loop = settings.shortsLoop
+      if (v.playbackRate !== settings.shortsSpeed) v.playbackRate = settings.shortsSpeed
+    }
+
+    function renderShortsControls() {
+      if (!shortsOverlay || !settings) return
+      const bar = shortsOverlay.querySelector('.ci-shorts-bar') as HTMLElement
+      const lang = settings.targetLanguage
+      const diffLabel = settings.shortsMinScore > 0 ? `≥${Math.round(settings.shortsMinScore * 100)}%` : 'Any level'
+      bar.innerHTML = `
+        <button class="ci-loop ${settings.shortsLoop ? 'active' : ''}" title="Loop this short for repetition">🔁 Loop</button>
+        <button class="ci-speed" title="Playback speed">${settings.shortsSpeed}×</button>
+        <button class="ci-diff" title="Only play shorts at or above this comprehension">🎯 ${diffLabel}</button>
+        <button class="ci-skip-toggle ${settings.shortsAutoSkip ? 'active' : ''}" title="Auto-skip shorts without ${lang} subtitles">${lang} only</button>
+        <button class="ci-skip-now" title="Skip this short">⏭</button>`
+      bar.querySelector('.ci-loop')!.addEventListener('click', async () => {
+        await saveShortsSettings({ shortsLoop: !settings!.shortsLoop })
+        applyPlaybackPrefs()
+        renderShortsControls()
+      })
+      bar.querySelector('.ci-speed')!.addEventListener('click', async () => {
+        const next = SPEED_STEPS[(SPEED_STEPS.indexOf(settings!.shortsSpeed) + 1) % SPEED_STEPS.length]
+        await saveShortsSettings({ shortsSpeed: next })
+        applyPlaybackPrefs()
+        renderShortsControls()
+      })
+      bar.querySelector('.ci-diff')!.addEventListener('click', async () => {
+        const next = DIFF_STEPS[(DIFF_STEPS.indexOf(settings!.shortsMinScore) + 1) % DIFF_STEPS.length]
+        await saveShortsSettings({ shortsMinScore: next })
+        renderShortsControls()
+      })
+      bar.querySelector('.ci-skip-toggle')!.addEventListener('click', async () => {
+        await saveShortsSettings({ shortsAutoSkip: !settings!.shortsAutoSkip })
+        renderShortsControls()
+      })
+      bar.querySelector('.ci-skip-now')!.addEventListener('click', clickNextShort)
+    }
+
     function ensureShortsOverlay(): HTMLElement {
       if (shortsOverlay?.isConnected) return shortsOverlay
       shortsOverlay = document.createElement('div')
@@ -483,35 +560,27 @@ export default defineContentScript({
         shortsOverlay.dataset.to = settings.nativeLanguage
       }
       shortsOverlay.innerHTML = `
-        <div class="ci-shorts-status"></div>
+        <div class="ci-shorts-top">
+          <span class="ci-shorts-score"></span>
+          <span class="ci-shorts-session"></span>
+        </div>
         <div class="ci-sub-target"></div>
         <div class="ci-sub-native"></div>
-        <div class="ci-shorts-bar">
-          <button class="ci-skip-toggle" title="Automatically skip shorts without target-language subtitles"></button>
-          <button class="ci-skip-now" title="Skip this short">⏭ Skip</button>
-        </div>`
+        <div class="ci-shorts-bar"></div>`
       document.body.appendChild(shortsOverlay)
-      const skipToggle = shortsOverlay.querySelector('.ci-skip-toggle') as HTMLElement
-      const renderToggle = () => {
-        const on = !!settings?.shortsAutoSkip
-        skipToggle.textContent = on ? `✓ ${settings?.targetLanguage ?? ''} only` : `${settings?.targetLanguage ?? ''} only: off`
-        skipToggle.classList.toggle('active', on)
-      }
-      renderToggle()
-      skipToggle.addEventListener('click', async () => {
-        if (!settings) return
-        settings = { ...settings, shortsAutoSkip: !settings.shortsAutoSkip }
-        renderToggle()
-        const { saveSettings } = await import('../utils/settings')
-        saveSettings(settings).catch(() => {})
-      })
-      shortsOverlay.querySelector('.ci-skip-now')!.addEventListener('click', clickNextShort)
+      renderShortsControls()
+      updateShortsSession()
       return shortsOverlay
     }
 
-    function setShortsStatus(text: string) {
-      const el = shortsOverlay?.querySelector('.ci-shorts-status') as HTMLElement | null
-      if (el) el.textContent = text
+    function updateShortsSession() {
+      const el = shortsOverlay?.querySelector('.ci-shorts-session') as HTMLElement | null
+      if (el) el.textContent = shortsSessionMarks > 0 ? `${shortsSessionMarks} marked this session` : ''
+    }
+
+    function setShortsScore(html: string) {
+      const el = shortsOverlay?.querySelector('.ci-shorts-score') as HTMLElement | null
+      if (el) el.innerHTML = html
     }
 
     function closeShortsOverlay() {
@@ -535,36 +604,52 @@ export default defineContentScript({
       const overlay = ensureShortsOverlay()
       ;(overlay.querySelector('.ci-sub-target') as HTMLElement).textContent = ''
       ;(overlay.querySelector('.ci-sub-native') as HTMLElement).textContent = ''
-      setShortsStatus('⏳')
+      setShortsScore('⏳')
+      applyPlaybackPrefs()
 
       try {
         const video = await fetchVideoInfo(videoId)
         if (videoId !== currentVideoId) return
         const track = pickTrack(video.tracks, lang)
         if (!track) {
-          setShortsStatus(`no ${lang} subs`)
+          setShortsScore(`<span class="ci-warn">no ${lang} subtitles</span>`)
           if (settings.shortsAutoSkip) setTimeout(() => {
             if (videoId === currentVideoId) clickNextShort()
-          }, 700)
+          }, 600)
           return
         }
         const cues = await fetchCaptionCues(track.baseUrl)
         if (videoId !== currentVideoId) return
         shortsCues = cues
-        setShortsStatus('')
 
-        // Analyze all subtitle tokens up-front (paints + exposures)
+        // Analyze all subtitle tokens up-front (score + paint + exposures)
         const tokens = tokenize(cues.map(c => c.text).join(' '))
         const info = await analyzeAll(lang, tokens)
+        if (videoId !== currentVideoId) return
         for (const [t, inf] of info) {
           tokenInfo.set(t, inf)
           if (!lemmaStatus.has(inf.lemma)) lemmaStatus.set(inf.lemma, { status: inf.status, level: inf.level })
           if (inf.status === 'learning') videoExposureLemmas.add(inf.lemma)
         }
+
+        const score = scoreTokens(tokens, t => info.get(t))
+        const pct = Math.round(score.score * 100)
+        const label = difficultyLabel(score.score)
+        const dot = label === 'hard' ? '🔴' : label === 'challenging' ? '🟠' : label === 'easy' ? '🔵' : '🟢'
+        setShortsScore(`${dot} ${pct}% · ${label} · ${score.uniqueUnknown.length} new`)
+
+        // Comprehensibility gate: skip shorts that are too hard for i+1 flow
+        if (settings.shortsAutoSkip && settings.shortsMinScore > 0 &&
+            score.countableTokens >= 6 && score.score < settings.shortsMinScore) {
+          setShortsScore(`${dot} ${pct}% — too hard, skipping…`)
+          setTimeout(() => { if (videoId === currentVideoId) clickNextShort() }, 700)
+          return
+        }
+        applyPlaybackPrefs()
         startShortsSync()
       } catch (err) {
         console.warn('[znam shorts]', err)
-        if (videoId === currentVideoId) setShortsStatus('n/a')
+        if (videoId === currentVideoId) setShortsScore('n/a')
       }
     }
 
@@ -574,6 +659,10 @@ export default defineContentScript({
         if (!shortsOverlay?.isConnected) return
         const v = shortsVideo()
         if (v && shortsCues.length) {
+          // YouTube resets loop/rate when it swaps the <video> between shorts
+          if (settings && (v.playbackRate !== settings.shortsSpeed || v.loop !== settings.shortsLoop)) {
+            applyPlaybackPrefs()
+          }
           let idx = -1
           for (let i = 0; i < shortsCues.length; i++) {
             if (shortsCues[i].start <= v.currentTime + 0.05) idx = i
@@ -827,6 +916,20 @@ export default defineContentScript({
     // ── Wire-up ─────────────────────────────────────────────
 
     document.addEventListener('yt-navigate-finish', () => setTimeout(onNavigation, 300))
+
+    // Immersion keyboard shortcuts on Shorts (Shift+key to avoid clashing with YT)
+    document.addEventListener('keydown', (e) => {
+      if (!location.pathname.startsWith('/shorts/') || !e.shiftKey) return
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      const key = e.key.toLowerCase()
+      if (key === 's') { e.preventDefault(); clickNextShort() }
+      else if (key === 'r') { const v = shortsVideo(); if (v) { v.currentTime = 0; v.play() } }
+      else if (key === 'l') {
+        saveShortsSettings({ shortsLoop: !settings?.shortsLoop }).then(() => { applyPlaybackPrefs(); renderShortsControls() })
+      }
+    }, true)
+
     // Shorts scrolling updates the URL without always firing navigate events
     let lastHref = location.href
     setInterval(() => {

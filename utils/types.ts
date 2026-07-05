@@ -84,6 +84,12 @@ export interface Settings {
   autoHosts: string[]
   /** On YouTube Shorts: auto-skip videos without target-language subtitles. */
   shortsAutoSkip: boolean
+  /** Skip shorts whose comprehensibility is below this (0 = off; keeps you in i+1). */
+  shortsMinScore: number
+  /** Loop each short for repetition. */
+  shortsLoop: boolean
+  /** Playback speed for shorts. */
+  shortsSpeed: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -92,6 +98,9 @@ export const DEFAULT_SETTINGS: Settings = {
   primaryTranslation: 'google',
   autoHosts: [],
   shortsAutoSkip: true,
+  shortsMinScore: 0.5,
+  shortsLoop: false,
+  shortsSpeed: 1,
 }
 
 // ── Lookup results (reused from manga-translator) ───────────

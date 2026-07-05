@@ -41,10 +41,16 @@ i+1 sweet spot.
   a "% Score results" button badges up to 30 thumbnails.
 
 - **Shorts immersion feed** — on youtube.com/shorts your personalized feed
-  becomes a target-language feed: shorts without target-language subtitles
-  are auto-skipped (toggleable in the overlay), and a clickable subtitle
-  overlay with per-line translation floats over the video. Phrase lookup:
-  click the first word, shift-click the last.
+  becomes a comprehensible-input feed. Each short is scored the moment it
+  opens; shorts are auto-skipped when they have **no target-language
+  subtitles** *or* fall **below your comprehension target** (Any / ≥50 / ≥70 /
+  ≥85 %), so you stay in the i+1 sweet spot. A clean overlay shows the current
+  line (clickable, colored by level) + its translation, a difficulty chip, and
+  a "marked this session" counter, with controls for **loop** (repetition),
+  **playback speed** (0.75–1.5×), the difficulty gate, and language-only
+  auto-skip. Clicking a word pauses the video. Keyboard: Shift+S skip,
+  Shift+R replay, Shift+L loop. Phrase lookup: click first word, shift-click
+  last.
 
 - **Comprehension score** is weighted two ways: by learning stage (known = 100 %,
   learning stages 1–5 = 20–100 %) and by word frequency (an unknown *rare* word
