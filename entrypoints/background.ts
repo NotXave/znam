@@ -1,5 +1,6 @@
 import type { LearningLevel, Message, TokenInfo, WordRecord, WordStatus } from '../utils/types'
 import { translate } from '../utils/translate'
+import { translateDeepL } from '../utils/deepl'
 import { lookupWiktionary } from '../utils/dictionary'
 import { lookupReverso } from '../utils/reverso'
 import { getSettings } from '../utils/settings'
@@ -210,6 +211,11 @@ export default defineBackground(() => {
           } catch {
             return { translations: [], examples: [] }
           }
+        }
+
+        case 'DEEPL_LOOKUP': {
+          const { text, from, to } = message.payload
+          return await translateDeepL(text, from, to)
         }
 
         case 'DICTIONARY_LOOKUP': {

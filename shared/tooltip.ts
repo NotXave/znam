@@ -4,6 +4,8 @@ interface LookupData {
   word: string
   googleText: string
   googleAlternatives: string[]
+  deeplText: string
+  deeplAlternatives: string[]
   definitions: DictEntry[]
   reverso: ReversoResult
   isPhrase: boolean
@@ -47,7 +49,7 @@ function targetForSpan(span: HTMLElement): LookupTarget {
 
 export class ReaderTooltip {
   private tooltip: HTMLElement | null = null
-  private primaryTranslation: 'google' | 'reverso' = 'google'
+  private primaryTranslation: 'google' | 'reverso' | 'deepl' = 'google'
   private lookupSeq = 0
   private ddOpen = false
   private activeWord = ''
@@ -59,7 +61,7 @@ export class ReaderTooltip {
     private statusApi: WordStatusApi,
   ) {}
 
-  setPrimaryTranslation(source: 'google' | 'reverso') {
+  setPrimaryTranslation(source: 'google' | 'reverso' | 'deepl') {
     this.primaryTranslation = source
   }
 
@@ -186,7 +188,8 @@ export class ReaderTooltip {
   private chooseTranslation(data: LookupData): string {
     const reversoText = data.reverso.translations[0] || ''
     if (this.primaryTranslation === 'reverso' && reversoText) return reversoText
-    return data.googleText || reversoText
+    if (this.primaryTranslation === 'deepl' && data.deeplText) return data.deeplText
+    return data.googleText || data.deeplText || reversoText
   }
 
   // Progressive lookup: render as soon as the first source answers,
@@ -203,14 +206,18 @@ export class ReaderTooltip {
 
     const { from, to, context } = target
 
+    // DeepL is rate-limited hard, so it's only queried when chosen as primary
+    const useDeepl = this.primaryTranslation === 'deepl'
     const data: LookupData = {
       word: label,
       googleText: '',
       googleAlternatives: [],
+      deeplText: '',
+      deeplAlternatives: [],
       definitions: [],
       reverso: { translations: [], examples: [] },
       isPhrase,
-      pendingSources: isPhrase ? 2 : 3,
+      pendingSources: (isPhrase ? 2 : 3) + (useDeepl ? 1 : 0),
     }
 
     let autoLearned = false
@@ -247,6 +254,16 @@ export class ReaderTooltip {
       if (r && typeof r === 'object') data.reverso = r as ReversoResult
       done()
     })
+
+    if (useDeepl) {
+      this.msgWithTimeout({ type: 'DEEPL_LOOKUP', payload: { text, from, to } }, 10000).then((r) => {
+        if (r && typeof r === 'object') {
+          data.deeplText = (r as { text: string }).text || ''
+          data.deeplAlternatives = (r as { alternatives: string[] }).alternatives || []
+        }
+        done()
+      })
+    }
 
     if (!isPhrase) {
       this.msgWithTimeout({ type: 'DICTIONARY_LOOKUP', payload: { word: text, lang: from } }, 8000).then((r) => {
@@ -326,6 +343,17 @@ export class ReaderTooltip {
     const esc = (s: string) => this.esc(s)
 
     const dropdownItems: string[] = []
+
+    const deeplItems = data.deeplAlternatives.length > 0
+      ? data.deeplAlternatives
+      : (data.deeplText ? [data.deeplText] : [])
+    if (deeplItems.length > 0) {
+      dropdownItems.push(`<div class="ci-dd-source">DeepL</div>`)
+      deeplItems.forEach((alt) => {
+        const checked = alt === translation ? '#8ab4f8' : 'transparent'
+        dropdownItems.push(`<div class="ci-dd-item" data-value="${esc(alt)}"><span class="ci-check" style="color:${checked}">✓</span>${esc(alt)}</div>`)
+      })
+    }
 
     const googleItems = data.googleAlternatives.length > 0
       ? data.googleAlternatives

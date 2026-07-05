@@ -75,7 +75,7 @@ export interface Settings {
   targetLanguage: string
   /** Translation target when clicking words. */
   nativeLanguage: string
-  primaryTranslation: 'google' | 'reverso'
+  primaryTranslation: 'google' | 'reverso' | 'deepl'
   /** Hostnames where the reader activates automatically. */
   autoHosts: string[]
 }
@@ -120,6 +120,7 @@ export interface SubtitleCue {
 export type Message =
   | { type: 'TRANSLATE'; payload: { text: string; from: string; to: string } }
   | { type: 'REVERSO_LOOKUP'; payload: { text: string; from: string; to: string } }
+  | { type: 'DEEPL_LOOKUP'; payload: { text: string; from: string; to: string } }
   | { type: 'DICTIONARY_LOOKUP'; payload: { word: string; lang: string } }
   /** tokens are unique surface forms → Record<token, TokenInfo>. */
   | { type: 'ANALYZE_TOKENS'; payload: { lang: string; tokens: string[] } }
