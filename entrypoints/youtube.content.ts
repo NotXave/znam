@@ -104,6 +104,20 @@ export default defineContentScript({
     interface LiveStatus { status: WordStatus | 'unknown' | 'name'; level?: LearningLevel }
     const lemmaStatus = new Map<string, LiveStatus>()
 
+    // Auto level progression, per video: learning words seen in the subtitles
+    // but not looked up advance a level over repeated videos.
+    let videoExposureLemmas = new Set<string>()
+    let ytInteracted = new Set<string>()
+    let ytExposuresSent = false
+
+    function sendVideoExposures() {
+      if (ytExposuresSent || !settings || videoExposureLemmas.size === 0) return
+      const lemmas = [...videoExposureLemmas].filter(l => !ytInteracted.has(l))
+      if (lemmas.length === 0) return
+      ytExposuresSent = true
+      send({ type: 'RECORD_EXPOSURES', payload: { lang: settings.targetLanguage, lemmas } }).catch(() => {})
+    }
+
     const statusApi: WordStatusApi = {
       lemmaFor(span) {
         return span.dataset.lemma || (span.dataset.word || '').toLowerCase()
@@ -117,6 +131,7 @@ export default defineContentScript({
       },
       set(lemma, status, extras) {
         if (!settings) return
+        ytInteracted.add(lemma)
         lemmaStatus.set(lemma, { status, level: status === 'learning' ? (extras?.level ?? 1) : undefined })
         repaintLemma(lemma)
         send({
@@ -134,6 +149,7 @@ export default defineContentScript({
       },
       setTranslation(lemma, translation) {
         if (!settings) return
+        ytInteracted.add(lemma)
         send({
           type: 'SET_WORD_TRANSLATION',
           payload: { lang: settings.targetLanguage, lemma, translation },
@@ -458,6 +474,10 @@ export default defineContentScript({
         const tokens = tokenize(text)
         const info = await analyzeAll(lang, tokens)
         if (videoId !== currentVideoId) return
+        // Every learning word in this video's subtitles is a passive exposure
+        for (const inf of info.values()) {
+          if (inf.status === 'learning') videoExposureLemmas.add(inf.lemma)
+        }
         const score = scoreTokens(tokens, t => info.get(t))
         if (score.countableTokens < 30) {
           setBadge(`<span class="ci-label">subs too short</span>`)
@@ -501,6 +521,7 @@ export default defineContentScript({
       console.info('[znam] navigation:', location.pathname, videoId ?? '')
       if (videoId) {
         if (videoId === currentVideoId) return
+        sendVideoExposures() // for the video we're leaving
         currentVideoId = videoId
         document.getElementById('ci-yt-badge')?.remove()
         document.getElementById('ci-score-results')?.remove()
@@ -512,6 +533,9 @@ export default defineContentScript({
         lastPauseCue = -1
         panel?.remove()
         panel = null
+        videoExposureLemmas = new Set()
+        ytInteracted = new Set()
+        ytExposuresSent = false
         startCaptionReader()
         // The metadata section renders shortly after yt-navigate-finish;
         // after ~5s we score anyway and fall back to the floating badge.
@@ -522,6 +546,7 @@ export default defineContentScript({
         }
         tryScore()
       } else {
+        sendVideoExposures() // leaving a watch page for a browse surface
         currentVideoId = null
         document.getElementById('ci-yt-badge')?.remove()
         closeSubtitlePanel()
@@ -592,6 +617,7 @@ export default defineContentScript({
     // ── Wire-up ─────────────────────────────────────────────
 
     document.addEventListener('yt-navigate-finish', () => setTimeout(onNavigation, 300))
+    window.addEventListener('pagehide', sendVideoExposures)
     browser.runtime.onMessage.addListener((message: any, _sender, sendResponse) => {
       if (message?.type === 'SETTINGS_UPDATED') {
         settings = message.payload

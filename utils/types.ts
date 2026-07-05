@@ -10,6 +10,8 @@ export interface WordRecord {
   lemma: string // IDB key [lang, lemma]
   status: WordStatus
   level?: LearningLevel // only meaningful while status === 'learning'
+  /** Exposures at the current level, toward auto-advancing to the next. */
+  exposures?: number
   translation?: string
   context?: string
   source: 'click' | 'page-read' | 'calibration' | 'import' | 'manual'
@@ -22,6 +24,8 @@ export interface TokenInfo {
   lemma: string
   status: WordStatus | 'unknown' | 'name'
   level?: LearningLevel
+  /** Frequency rank of the lemma (1 = most common); undefined if not ranked. */
+  rank?: number
 }
 
 export interface ScoreResult {
@@ -137,6 +141,9 @@ export type Message =
       }
     }
   | { type: 'SET_WORD_TRANSLATION'; payload: { lang: string; lemma: string; translation: string } }
+  /** Learning words seen while reading (not looked up) → advance toward next level. */
+  | { type: 'RECORD_EXPOSURES'; payload: { lang: string; lemmas: string[] } }
+  | { type: 'GET_STATS'; payload: { lang: string } }
   | { type: 'MARK_PAGE_READ'; payload: { lang: string; lemmas: string[] } }
   | { type: 'SAVE_LIBRARY_ENTRY'; payload: Omit<LibraryEntry, 'createdAt' | 'updatedAt'> }
   | { type: 'GET_LIBRARY'; payload: { lang?: string } }

@@ -40,9 +40,19 @@ i+1 sweet spot.
   line controls and an auto-pause-per-line toggle. On browse and search pages
   a "% Score results" button badges up to 30 thumbnails.
 
-- **Comprehension score** is weighted by learning stage — known words count
-  fully, learning stages 1–5 count 20–100 % — so studying words you're
-  learning raises the score instead of leaving everything at "hard".
+- **Comprehension score** is weighted two ways: by learning stage (known = 100 %,
+  learning stages 1–5 = 20–100 %) and by word frequency (an unknown *rare* word
+  barely dents the score; an unknown *common* word costs more) — so the i+1
+  difficulty label reflects what actually blocks comprehension.
+
+- **Automatic level progression** — a learning word you keep meeting while
+  reading/watching *without looking it up* climbs a stage on its own (every few
+  distinct readings), so your knowledge calibrates over time with no manual
+  bookkeeping. Looking a word up excludes it from that reading's exposures.
+
+- **Stats dashboard** (app page → Stats) — words known, learning-stage
+  distribution, new words per day over the last 30 days, and reading activity
+  (pages/videos, how many sit in the 90–98 % "sweet spot").
 - **Bootstrap your knowledge** three ways (app page):
   - *Calibrate*: a ~35-word frequency quiz estimates "you know the top N
     words" (logistic fit), adjustable before applying.

@@ -30,11 +30,75 @@ const LANGUAGES: [string, string][] = [
 // ── Tabs ────────────────────────────────────────────────────
 
 const refreshers: Record<string, () => void> = {
+  stats: renderStats,
   library: renderLibrary,
   words: renderWords,
   languages: renderLanguageState,
   import: () => {},
   calibrate: () => {},
+}
+
+interface Stats {
+  counts: { known: number; learning: number; ignored: number }
+  levels: number[]
+  addedThisWeek: number
+  daily: Record<string, number>
+  totalWords: number
+  library: { total: number; pages: number; videos: number; readThisWeek: number; sweetSpot: number; avgScore: number }
+}
+
+const LEVEL_COLORS = ['#c14b4b', '#c1774b', '#b8a12e', '#8fa32e', '#5d9e4a']
+
+function tile(num: string | number, label: string): string {
+  return `<div class="stat-tile"><div class="num">${num}</div><div class="lbl">${label}</div></div>`
+}
+
+function bar(label: string, value: number, max: number, color: string): string {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0
+  return `<div class="bar-row">
+    <span class="bar-label">${label}</span>
+    <span class="bar-track"><span class="bar-fill" style="width:${pct}%;background:${color}"></span></span>
+    <span class="bar-num">${value.toLocaleString()}</span>
+  </div>`
+}
+
+async function renderStats() {
+  const s: Stats = await send({ type: 'GET_STATS', payload: { lang } })
+  if (!s || (s as any).error) return
+
+  document.getElementById('stats-tiles')!.innerHTML =
+    tile(s.counts.known.toLocaleString(), 'Words known') +
+    tile(s.counts.learning.toLocaleString(), 'Learning') +
+    tile('+' + s.addedThisWeek.toLocaleString(), 'New this week') +
+    tile(Math.round(s.library.avgScore * 100) + '%', 'Avg comprehensibility')
+
+  const statusMax = Math.max(1, s.counts.known, s.counts.learning, s.counts.ignored)
+  document.getElementById('stats-status')!.innerHTML =
+    bar('Known', s.counts.known, statusMax, '#5d9e4a') +
+    bar('Learning', s.counts.learning, statusMax, '#b8a12e') +
+    bar('Ignored', s.counts.ignored, statusMax, '#555')
+
+  const levelMax = Math.max(1, ...s.levels)
+  document.getElementById('stats-levels')!.innerHTML =
+    s.levels.map((n, i) => bar(`Stage ${i + 1}`, n, levelMax, LEVEL_COLORS[i])).join('')
+
+  // Daily new-words chart over the last 30 days
+  const days: { date: string; count: number }[] = []
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+    days.push({ date: d, count: s.daily[d] || 0 })
+  }
+  const dayMax = Math.max(1, ...days.map(d => d.count))
+  document.getElementById('stats-daily')!.innerHTML = days
+    .map(d => `<div class="day" style="height:${Math.round((d.count / dayMax) * 100)}%" title="${d.date}: ${d.count} new"></div>`)
+    .join('')
+
+  const lib = s.library
+  document.getElementById('stats-reading')!.innerHTML = `
+    <div class="bar-row"><span class="bar-label">In library</span><span>${lib.total.toLocaleString()} items — ${lib.pages} pages, ${lib.videos} videos</span></div>
+    <div class="bar-row"><span class="bar-label">This week</span><span>${lib.readThisWeek} read</span></div>
+    <div class="bar-row"><span class="bar-label">Sweet spot</span><span>${lib.sweetSpot} at 90–98% comprehensible</span></div>
+  `
 }
 
 function switchTab(name: string) {
@@ -460,7 +524,7 @@ async function init() {
     renderLanguageState()
   })
 
-  renderLibrary()
+  renderStats()
 }
 
 init()

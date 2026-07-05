@@ -60,6 +60,11 @@ export default defineContentScript({
     // Article tokens used for the page score (Readability when possible)
     let articleTokens: string[] = []
     let pageScore: PageScore | null = null
+    // Auto level progression: learning words looked up here don't count as
+    // passive exposures; sent once when leaving the page after real reading.
+    let activatedAt = 0
+    let exposuresSent = false
+    const interactedLemmas = new Set<string>()
 
     const statusApi: WordStatusApi = {
       lemmaFor(span) {
@@ -73,6 +78,7 @@ export default defineContentScript({
         return lemmaStatus.get(lemma)?.level
       },
       set(lemma, status, extras) {
+        interactedLemmas.add(lemma)
         lemmaStatus.set(lemma, { status, level: status === 'learning' ? (extras?.level ?? 1) : undefined })
         repaintLemma(lemma)
         refreshScore()
@@ -91,11 +97,26 @@ export default defineContentScript({
       },
       setTranslation(lemma, translation) {
         if (!settings) return
+        interactedLemmas.add(lemma)
         sendMessage({
           type: 'SET_WORD_TRANSLATION',
           payload: { lang: settings.targetLanguage, lemma, translation },
         }).catch(() => {})
       },
+    }
+
+    // Record passive exposures: learning words present on the page that the
+    // user did NOT look up — advances their level over repeated readings.
+    function sendExposures() {
+      if (!active || !settings || exposuresSent) return
+      if (Date.now() - activatedAt < 15000) return // require real reading time
+      const lemmas: string[] = []
+      for (const [lemma, s] of lemmaStatus) {
+        if (s.status === 'learning' && !interactedLemmas.has(lemma)) lemmas.push(lemma)
+      }
+      if (lemmas.length === 0) return
+      exposuresSent = true
+      sendMessage({ type: 'RECORD_EXPOSURES', payload: { lang: settings.targetLanguage, lemmas } }).catch(() => {})
     }
 
     const tooltip = new ReaderTooltip(sendMessage, statusApi)
@@ -329,6 +350,9 @@ export default defineContentScript({
         settings = await sendMessage({ type: 'GET_SETTINGS' })
         if (!settings) return
         active = true
+        activatedAt = Date.now()
+        exposuresSent = false
+        interactedLemmas.clear()
 
         if (!styleEl) {
           styleEl = document.createElement('style')
@@ -362,6 +386,7 @@ export default defineContentScript({
     }
 
     function deactivate() {
+      sendExposures()
       active = false
       observer?.disconnect()
       observer = null
@@ -395,6 +420,12 @@ export default defineContentScript({
         sendResponse({ ok: true })
       }
       return false
+    })
+
+    // Leaving the page counts the reading session's passive exposures
+    window.addEventListener('pagehide', sendExposures)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') sendExposures()
     })
 
     // Auto-activate on allowlisted hosts

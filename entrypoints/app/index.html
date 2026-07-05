@@ -9,7 +9,8 @@
     <header>
       <h1>znam</h1>
       <nav>
-        <button data-tab="library" class="active">Library</button>
+        <button data-tab="stats" class="active">Stats</button>
+        <button data-tab="library">Library</button>
         <button data-tab="words">Words</button>
         <button data-tab="languages">Languages</button>
         <button data-tab="import">Import</button>
@@ -19,7 +20,25 @@
     </header>
 
     <main>
-      <section id="tab-library" class="tab active">
+      <section id="tab-stats" class="tab active">
+        <div id="stats-tiles" class="stat-tiles"></div>
+        <div class="card">
+          <h2>Vocabulary</h2>
+          <div id="stats-status"></div>
+          <h2 style="margin-top:14px">Learning stages</h2>
+          <div id="stats-levels"></div>
+        </div>
+        <div class="card">
+          <h2>New words (last 30 days)</h2>
+          <div id="stats-daily" class="daily-chart"></div>
+        </div>
+        <div class="card">
+          <h2>Reading</h2>
+          <div id="stats-reading"></div>
+        </div>
+      </section>
+
+      <section id="tab-library" class="tab">
         <div class="toolbar">
           <label><input type="checkbox" id="lib-pinned-only" /> Pinned only</label>
           <select id="lib-sort">

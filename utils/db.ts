@@ -138,6 +138,21 @@ export async function countFreqRows(lang: string): Promise<number> {
   return reqResult(db.transaction('freq').objectStore('freq').count(range))
 }
 
+/** Frequency rank for each requested lemma (absent = not ranked). */
+export async function getFreqRanks(lang: string, lemmas: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (lemmas.length === 0) return out
+  const db = await openDb()
+  const store = db.transaction('freq').objectStore('freq')
+  await Promise.all(
+    lemmas.map(async (lemma) => {
+      const row = await reqResult<any>(store.get([lang, lemma]))
+      if (row && typeof row.rank === 'number') out.set(lemma, row.rank)
+    }),
+  )
+  return out
+}
+
 /** Lemmas at ranks 1..n (inclusive), ordered by rank. */
 export async function getTopLemmas(lang: string, n: number): Promise<string[]> {
   const db = await openDb()

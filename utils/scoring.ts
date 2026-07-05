@@ -18,6 +18,21 @@ export function comprehensionWeight(status: WordStatus | 'unknown' | 'name', lev
 }
 
 /**
+ * How much a token matters to comprehension, by frequency rank. A frequent
+ * word carries more of the meaning, so an unknown common word hurts the score
+ * more than an unknown rare one. Unranked lemmas (rare words, names) get a low
+ * weight so they barely dent the score.
+ */
+export function importanceWeight(rank?: number): number {
+  if (rank == null) return 0.4
+  if (rank <= 1000) return 1
+  if (rank <= 5000) return 0.85
+  if (rank <= 15000) return 0.65
+  if (rank <= 40000) return 0.5
+  return 0.4
+}
+
+/**
  * Comprehensibility = summed comprehension weight / countable tokens.
  * Names and ignored lemmas are excluded from the denominator.
  */
@@ -26,6 +41,7 @@ export function scoreTokens(
   infoFor: (token: string) => TokenInfo | undefined,
 ): PageScore {
   let weighted = 0
+  let weightTotal = 0
   let known = 0
   let learning = 0
   let unknown = 0
@@ -36,7 +52,10 @@ export function scoreTokens(
     const info = infoFor(token)
     if (!info || info.status === 'name' || info.status === 'ignored') continue
     lemmaCounts[info.lemma] = (lemmaCounts[info.lemma] || 0) + 1
-    weighted += comprehensionWeight(info.status, info.level)
+    // Frequency-weighted: rare unknown words dent the score less than common ones
+    const w = importanceWeight(info.rank)
+    weightTotal += w
+    weighted += w * comprehensionWeight(info.status, info.level)
     if (info.status === 'known') known++
     else if (info.status === 'learning') learning++
     else {
@@ -47,7 +66,7 @@ export function scoreTokens(
 
   const countable = known + learning + unknown
   return {
-    score: countable > 0 ? weighted / countable : 0,
+    score: weightTotal > 0 ? weighted / weightTotal : 0,
     countableTokens: countable,
     knownTokens: known,
     learningTokens: learning,

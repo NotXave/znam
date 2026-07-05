@@ -18,7 +18,7 @@ import {
 } from '../utils/db'
 import { handleSetupPort, languageState, setCalibratedAt } from '../utils/language-setup'
 import { calibrationLemmas, calibrationSample, estimateKnownRank } from '../utils/calibration'
-import { getVideoScores, putVideoScore } from '../utils/db'
+import { getFreqRanks, getVideoScores, putVideoScore } from '../utils/db'
 import { scoreTokens } from '../utils/scoring'
 import { tokenize } from '../utils/tokenizer'
 import { fetchCaptionText, fetchVideoInfo, pickTrack } from '../utils/youtube-captions'
@@ -62,25 +62,107 @@ async function analyzeTokens(lang: string, tokens: string[]): Promise<Record<str
   const lowerSet = new Set(tokens.map(t => t.toLowerCase()))
   const lemmaMap = await lemmatizeBatch(lang, [...lowerSet])
 
+  // Frequency ranks for the distinct resolved lemmas (for weighted scoring)
+  const lemmaSet = new Set<string>()
+  for (const lower of lowerSet) lemmaSet.add(lemmaMap.get(lower) ?? lower)
+  const ranks = await getFreqRanks(lang, [...lemmaSet])
+
   const out: Record<string, TokenInfo> = {}
   for (const token of tokens) {
     const lower = token.toLowerCase()
     const dictLemma = lemmaMap.get(lower) ?? null
     const lemma = dictLemma ?? lower
+    const rank = ranks.get(lemma)
     const entry = statuses.get(lemma)
     if (entry) {
-      out[token] = { lemma, status: entry.status, level: entry.level }
+      out[token] = { lemma, status: entry.status, level: entry.level, rank }
       continue
     }
     // Proper-noun heuristic: capitalized, unknown to the dictionary, and the
     // page never shows it lowercased → almost certainly a name.
     if (!dictLemma && isCapitalized(token) && !tokenSet.has(lower)) {
-      out[token] = { lemma, status: 'name' }
+      out[token] = { lemma, status: 'name', rank }
       continue
     }
-    out[token] = { lemma, status: 'unknown' }
+    out[token] = { lemma, status: 'unknown', rank }
   }
   return out
+}
+
+// ── Auto level progression ──────────────────────────────────
+
+// Exposures (seen while reading, not looked up) needed to advance a level.
+const EXPOSURE_THRESHOLD = 4
+
+async function recordExposures(lang: string, lemmas: string[]): Promise<{ advanced: number }> {
+  const statuses = await statusMapFor(lang)
+  const now = Date.now()
+  const updates: WordRecord[] = []
+  let advanced = 0
+  for (const lemma of new Set(lemmas)) {
+    const entry = statuses.get(lemma)
+    if (!entry || entry.status !== 'learning') continue // only learning words progress
+    const rec = await getWord(lang, lemma)
+    if (!rec) continue
+    const level = (rec.level ?? 1) as LearningLevel
+    const exposures = (rec.exposures ?? 0) + 1
+    if (exposures >= EXPOSURE_THRESHOLD && level < 5) {
+      const next = (level + 1) as LearningLevel
+      updates.push({ ...rec, level: next, exposures: 0, updatedAt: now })
+      statuses.set(lemma, { status: 'learning', level: next })
+      advanced++
+    } else {
+      updates.push({ ...rec, exposures, updatedAt: now })
+    }
+  }
+  await putWords(updates)
+  return { advanced }
+}
+
+// ── Stats ───────────────────────────────────────────────────
+
+async function computeStats(lang: string) {
+  const words = await getAllWords(lang)
+  const library = await getLibrary(lang)
+  const now = Date.now()
+  const DAY = 86400000
+
+  const counts = { known: 0, learning: 0, ignored: 0 }
+  const levels = [0, 0, 0, 0, 0] // learning stages 1..5
+  let addedThisWeek = 0
+  // words first tracked per day, last 30 days
+  const daily: Record<string, number> = {}
+  for (const w of words) {
+    counts[w.status]++
+    if (w.status === 'learning') levels[(w.level ?? 1) - 1]++
+    if (now - w.createdAt < 7 * DAY) addedThisWeek++
+    if (now - w.createdAt < 30 * DAY) {
+      const day = new Date(w.createdAt).toISOString().slice(0, 10)
+      daily[day] = (daily[day] || 0) + 1
+    }
+  }
+
+  const readThisWeek = library.filter(e => now - e.updatedAt < 7 * DAY)
+  const sweetSpot = library.filter(e => e.score >= 0.9 && e.score <= 0.98).length
+  const avgScore = library.length
+    ? library.reduce((s, e) => s + e.score, 0) / library.length
+    : 0
+
+  return {
+    counts,
+    levels,
+    addedThisWeek,
+    daily,
+    totalWords: words.length,
+    library: {
+      total: library.length,
+      pages: library.filter(e => e.kind === 'page').length,
+      videos: library.filter(e => e.kind === 'youtube').length,
+      readThisWeek: readThisWeek.length,
+      sweetSpot,
+      avgScore,
+    },
+  }
 }
 
 async function setWordStatus(payload: Extract<Message, { type: 'SET_WORD_STATUS' }>['payload']): Promise<{ ok: true }> {
@@ -258,6 +340,12 @@ export default defineBackground(() => {
 
         case 'SET_WORD_TRANSLATION':
           return await setWordTranslation(message.payload)
+
+        case 'RECORD_EXPOSURES':
+          return await recordExposures(message.payload.lang, message.payload.lemmas)
+
+        case 'GET_STATS':
+          return await computeStats(message.payload.lang)
 
         case 'MARK_PAGE_READ':
           return await markPageRead(message.payload.lang, message.payload.lemmas)
