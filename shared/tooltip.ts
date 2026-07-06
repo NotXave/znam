@@ -58,6 +58,8 @@ export class ReaderTooltip {
   private activeLemma = ''
   private openedAtScrollY = 0
   private lastClickedSpan: HTMLElement | null = null
+  /** Translation the user manually picked — kept across later re-renders. */
+  private pickedTranslation: string | null = null
 
   constructor(
     private sendMessage: (msg: Message) => Promise<any>,
@@ -224,6 +226,7 @@ export class ReaderTooltip {
     this.activeWord = text
     this.activeLemma = span && !isPhrase ? this.statusApi.lemmaFor(span) : ''
     this.ddOpen = false
+    this.pickedTranslation = null
     this.openedAtScrollY = window.scrollY
 
     const label = isPhrase && text.length > 60 ? text.slice(0, 60) + '…' : text
@@ -255,7 +258,8 @@ export class ReaderTooltip {
     let translationSaved = false
     const render = () => {
       if (seq !== this.lookupSeq) return
-      const translation = this.chooseTranslation(data)
+      // A manual pick wins over the auto-chosen primary on every later render
+      const translation = this.pickedTranslation || this.chooseTranslation(data)
       if (!translation && data.pendingSources > 0) return // nothing to show yet
       this.showTooltip(data, translation || '(no translation)', x, y)
       // Persist the translation onto the word we just auto-marked as learning
@@ -477,6 +481,8 @@ export class ReaderTooltip {
         })
         const activeCheck = item.querySelector('.ci-check') as HTMLElement | null
         if (activeCheck) activeCheck.style.color = '#8ab4f8'
+        // Remember the pick so later re-renders don't revert it
+        if (val) this.pickedTranslation = val
         // Persist the chosen translation for this word (words only, not phrases)
         if (this.activeLemma && val) this.statusApi.setTranslation(this.activeLemma, val)
         this.ddOpen = false
