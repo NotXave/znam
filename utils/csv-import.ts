@@ -210,11 +210,13 @@ function csvQuote(s: string): string {
 }
 
 export function wordsToCsv(words: WordRecord[]): string {
-  const header = 'lemma,status,translation,context,language,createdAt,source'
+  const header = 'lemma,status,level,lookups,translation,context,language,createdAt,source'
   const rows = words.map(w =>
     [
       csvQuote(w.lemma),
       w.status,
+      w.level ?? '',
+      w.lookups ?? 0,
       csvQuote(w.translation || ''),
       csvQuote(w.context || ''),
       w.lang,

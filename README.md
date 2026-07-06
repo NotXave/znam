@@ -75,7 +75,10 @@ i+1 sweet spot.
     [manga-translator](https://github.com/NotXave/manga-translator) or
     language-reactor-clone.
   - *Organically*: click words while reading, mark pages as read.
-- **Export** — words as CSV (Excel-safe BOM) or Anki-importable text.
+- **Export** — words as CSV (Excel-safe BOM) or Anki-importable text. Every
+  time you look a word up is counted, so the Words tab can sort by "most
+  looked up" and export just your hardest words (looked up ≥ N times) straight
+  to Anki — your personal review deck of the words that keep tripping you up.
 
 ## Build & install
 

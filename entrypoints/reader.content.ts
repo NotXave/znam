@@ -103,6 +103,11 @@ export default defineContentScript({
           payload: { lang: settings.targetLanguage, lemma, translation },
         }).catch(() => {})
       },
+      recordLookup(lemma) {
+        if (!settings) return
+        interactedLemmas.add(lemma)
+        sendMessage({ type: 'RECORD_LOOKUP', payload: { lang: settings.targetLanguage, lemma } }).catch(() => {})
+      },
     }
 
     // Record passive exposures: learning words present on the page that the

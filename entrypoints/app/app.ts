@@ -184,10 +184,17 @@ async function renderWords() {
   const words: WordRecord[] = await send({ type: 'GET_WORDS', payload: { lang } })
   if (!Array.isArray(words)) return
 
+  const sort = $<HTMLSelectElement>('word-sort').value
   let items = words
   if (filter) items = items.filter(w => w.status === filter)
   if (search) items = items.filter(w => w.lemma.includes(search) || (w.translation || '').toLowerCase().includes(search))
-  items.sort((a, b) => b.updatedAt - a.updatedAt)
+  if (sort === 'lookups') items.sort((a, b) => (b.lookups ?? 0) - (a.lookups ?? 0) || b.updatedAt - a.updatedAt)
+  else if (sort === 'alpha') items.sort((a, b) => a.lemma.localeCompare(b.lemma))
+  else items.sort((a, b) => b.updatedAt - a.updatedAt)
+
+  const min = Math.max(1, Number($<HTMLInputElement>('freq-threshold').value) || 1)
+  const freqN = words.filter(w => (w.lookups ?? 0) >= min).length
+  $('freq-count').textContent = freqN ? `${freqN} words` : 'no words yet'
 
   $('word-count').textContent =
     `${words.filter(w => w.status === 'known').length.toLocaleString()} known · ` +
@@ -205,11 +212,13 @@ async function renderWords() {
         `<button data-s="learning" data-l="${l}" class="lvl-${l}${w.status === 'learning' && level === l ? ' active' : ''}" title="Learning stage ${l}">${l}</button>`,
       )
       .join('')
+    const lookups = w.lookups ?? 0
+    const lookupBadge = lookups > 0 ? ` <span class="hint" title="times you looked it up">· ${lookups}× looked up</span>` : ''
     const item = document.createElement('div')
     item.className = 'item'
     item.innerHTML = `
       <div class="grow">
-        <b></b> <span class="status-${w.status}">${statusLabel}</span>
+        <b></b> <span class="status-${w.status}">${statusLabel}</span>${lookupBadge}
         <div class="meta"></div>
       </div>
       <div class="word-status">
@@ -389,6 +398,7 @@ async function init() {
 
   $('word-search').addEventListener('input', renderWords)
   $('word-filter').addEventListener('change', renderWords)
+  $('word-sort').addEventListener('change', renderWords)
   $('export-csv').addEventListener('click', async () => {
     const words: WordRecord[] = await send({ type: 'GET_WORDS', payload: { lang } })
     download(`znam-${lang}-words.csv`, wordsToCsv(words))
@@ -396,6 +406,28 @@ async function init() {
   $('export-anki').addEventListener('click', async () => {
     const words: WordRecord[] = await send({ type: 'GET_WORDS', payload: { lang, status: 'learning' } })
     download(`znam-${lang}-anki.txt`, wordsToAnki(words))
+  })
+
+  // Export the most-looked-up words (≥ threshold), hardest first
+  async function frequentWords(): Promise<WordRecord[]> {
+    const min = Math.max(1, Number($<HTMLInputElement>('freq-threshold').value) || 1)
+    const words: WordRecord[] = await send({ type: 'GET_WORDS', payload: { lang } })
+    return words
+      .filter(w => (w.lookups ?? 0) >= min)
+      .sort((a, b) => (b.lookups ?? 0) - (a.lookups ?? 0))
+  }
+  async function updateFreqCount() {
+    const words = await frequentWords()
+    $('freq-count').textContent = words.length ? `${words.length} words` : 'no words yet'
+  }
+  $('freq-threshold').addEventListener('input', updateFreqCount)
+  $('export-freq-csv').addEventListener('click', async () => {
+    const words = await frequentWords()
+    if (words.length) download(`znam-${lang}-frequent.csv`, wordsToCsv(words))
+  })
+  $('export-freq-anki').addEventListener('click', async () => {
+    const words = await frequentWords()
+    if (words.length) download(`znam-${lang}-frequent-anki.txt`, wordsToAnki(words))
   })
 
   $('setup-download').addEventListener('click', () =>

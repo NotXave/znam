@@ -199,6 +199,11 @@ export default defineContentScript({
           payload: { lang: settings.targetLanguage, lemma, translation },
         }).catch(() => {})
       },
+      recordLookup(lemma) {
+        if (!settings) return
+        ytInteracted.add(lemma)
+        send({ type: 'RECORD_LOOKUP', payload: { lang: settings.targetLanguage, lemma } }).catch(() => {})
+      },
     }
 
     const tooltip = new ReaderTooltip(send, statusApi)

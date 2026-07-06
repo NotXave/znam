@@ -60,8 +60,22 @@
             <option value="known">Known</option>
             <option value="ignored">Ignored</option>
           </select>
+          <select id="word-sort">
+            <option value="recent">Recently changed</option>
+            <option value="lookups">Most looked up</option>
+            <option value="alpha">A–Z</option>
+          </select>
           <button id="export-csv">Export CSV</button>
           <button id="export-anki">Export Anki</button>
+        </div>
+        <div class="toolbar" style="background:#16162a;border-radius:8px;padding:8px 10px">
+          <span class="hint" style="margin:0">Export the words you look up most:</span>
+          <label class="hint" style="margin:0">looked up ≥
+            <input type="number" id="freq-threshold" value="3" min="1" style="width:56px" />
+            × </label>
+          <button id="export-freq-csv">Export CSV</button>
+          <button id="export-freq-anki">Export Anki</button>
+          <span id="freq-count" class="hint" style="margin:0"></span>
         </div>
         <div id="word-count" class="hint"></div>
         <div id="word-list" class="list"></div>

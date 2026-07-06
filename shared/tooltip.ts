@@ -30,6 +30,8 @@ export interface WordStatusApi {
   ): void
   /** Persist a chosen translation without touching status/level. */
   setTranslation(lemma: string, translation: string): void
+  /** Count that the user looked this word up (a "hard word" signal). */
+  recordLookup(lemma: string): void
 }
 
 const BLOCK_SELECTOR = 'p,li,blockquote,h1,h2,h3,h4,h5,h6,td,dd,figcaption,article,div'
@@ -240,6 +242,8 @@ export class ReaderTooltip {
     if (wasUnknown) {
       this.statusApi.set(this.activeLemma, 'learning', { level: 1, context })
     }
+    // Every single-word lookup counts — even re-checking a word you "know"
+    if (this.activeLemma) this.statusApi.recordLookup(this.activeLemma)
 
     // Always query DeepL too, so its translation is available to compare and
     // pick in the dropdown (throttled + cached in the background).

@@ -165,7 +165,20 @@ async function computeStats(lang: string) {
   }
 }
 
-async function setWordStatus(payload: Extract<Message, { type: 'SET_WORD_STATUS' }>['payload']): Promise<{ ok: true }> {
+// Serialize single-word read-modify-write ops so the concurrent set() +
+// recordLookup on a fresh word click don't clobber each other's fields.
+let wordWriteChain: Promise<unknown> = Promise.resolve()
+function serializeWordWrite<T>(fn: () => Promise<T>): Promise<T> {
+  const run = wordWriteChain.then(fn, fn)
+  wordWriteChain = run.catch(() => {})
+  return run
+}
+
+function setWordStatus(payload: Extract<Message, { type: 'SET_WORD_STATUS' }>['payload']): Promise<{ ok: true }> {
+  return serializeWordWrite(() => setWordStatusImpl(payload))
+}
+
+async function setWordStatusImpl(payload: Extract<Message, { type: 'SET_WORD_STATUS' }>['payload']): Promise<{ ok: true }> {
   const { lang, lemma, status } = payload
   const statuses = await statusMapFor(lang)
   if (status === 'unknown') {
@@ -181,6 +194,8 @@ async function setWordStatus(payload: Extract<Message, { type: 'SET_WORD_STATUS'
     lemma,
     status,
     level,
+    exposures: existing?.exposures,
+    lookups: existing?.lookups,
     translation: payload.translation || existing?.translation,
     context: payload.context || existing?.context,
     source: payload.source,
@@ -197,7 +212,11 @@ async function setWordStatus(payload: Extract<Message, { type: 'SET_WORD_STATUS'
  * isn't tracked yet (e.g. the alternative was picked before auto-save landed),
  * create it as learning-1 — same intent as clicking the word.
  */
-async function setWordTranslation(payload: { lang: string; lemma: string; translation: string }): Promise<{ ok: true }> {
+function setWordTranslation(payload: { lang: string; lemma: string; translation: string }): Promise<{ ok: true }> {
+  return serializeWordWrite(() => setWordTranslationImpl(payload))
+}
+
+async function setWordTranslationImpl(payload: { lang: string; lemma: string; translation: string }): Promise<{ ok: true }> {
   const { lang, lemma, translation } = payload
   const statuses = await statusMapFor(lang)
   const existing = await getWord(lang, lemma)
@@ -206,6 +225,8 @@ async function setWordTranslation(payload: { lang: string; lemma: string; transl
   const level = status === 'learning' ? (existing?.level ?? 1) : undefined
   await putWords([{
     lang, lemma, status, level, translation,
+    exposures: existing?.exposures,
+    lookups: existing?.lookups,
     context: existing?.context,
     source: existing?.source ?? 'click',
     createdAt: existing?.createdAt ?? now,
@@ -213,6 +234,28 @@ async function setWordTranslation(payload: { lang: string; lemma: string; transl
   }])
   if (!statuses.has(lemma)) statuses.set(lemma, { status, level })
   return { ok: true }
+}
+
+/** Increment a word's lookup counter (creating it as learning-1 if new). */
+function recordLookup(lang: string, lemma: string): Promise<{ lookups: number }> {
+  return serializeWordWrite(() => recordLookupImpl(lang, lemma))
+}
+
+async function recordLookupImpl(lang: string, lemma: string): Promise<{ lookups: number }> {
+  const statuses = await statusMapFor(lang)
+  const existing = await getWord(lang, lemma)
+  const now = Date.now()
+  const lookups = (existing?.lookups ?? 0) + 1
+  if (existing) {
+    await putWords([{ ...existing, lookups, updatedAt: now }])
+  } else {
+    await putWords([{
+      lang, lemma, status: 'learning', level: 1, lookups,
+      source: 'click', createdAt: now, updatedAt: now,
+    }])
+    statuses.set(lemma, { status: 'learning', level: 1 })
+  }
+  return { lookups }
 }
 
 async function markPageRead(lang: string, lemmas: string[]): Promise<{ promoted: number }> {
@@ -340,6 +383,9 @@ export default defineBackground(() => {
 
         case 'SET_WORD_TRANSLATION':
           return await setWordTranslation(message.payload)
+
+        case 'RECORD_LOOKUP':
+          return await recordLookup(message.payload.lang, message.payload.lemma)
 
         case 'RECORD_EXPOSURES':
           return await recordExposures(message.payload.lang, message.payload.lemmas)

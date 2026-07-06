@@ -12,6 +12,8 @@ export interface WordRecord {
   level?: LearningLevel // only meaningful while status === 'learning'
   /** Exposures at the current level, toward auto-advancing to the next. */
   exposures?: number
+  /** How many times the user has looked this word up (a "hard word" signal). */
+  lookups?: number
   translation?: string
   context?: string
   source: 'click' | 'page-read' | 'calibration' | 'import' | 'manual'
@@ -153,6 +155,8 @@ export type Message =
       }
     }
   | { type: 'SET_WORD_TRANSLATION'; payload: { lang: string; lemma: string; translation: string } }
+  /** Count that the user looked this word up (increments its lookups). */
+  | { type: 'RECORD_LOOKUP'; payload: { lang: string; lemma: string } }
   /** Learning words seen while reading (not looked up) → advance toward next level. */
   | { type: 'RECORD_EXPOSURES'; payload: { lang: string; lemmas: string[] } }
   | { type: 'GET_STATS'; payload: { lang: string } }
