@@ -231,6 +231,13 @@ export class ReaderTooltip {
 
     const { from, to, context } = target
 
+    // Clicking a word you don't know is itself the "I'm learning this" signal —
+    // color it immediately (level 1) instead of waiting for the translation.
+    const wasUnknown = !!this.activeLemma && this.statusApi.statusFor(this.activeLemma) === 'unknown'
+    if (wasUnknown) {
+      this.statusApi.set(this.activeLemma, 'learning', { level: 1, context })
+    }
+
     // DeepL is rate-limited hard, so it's only queried when chosen as primary
     const useDeepl = this.primaryTranslation === 'deepl'
     const data: LookupData = {
@@ -245,18 +252,16 @@ export class ReaderTooltip {
       pendingSources: (isPhrase ? 2 : 3) + (useDeepl ? 1 : 0),
     }
 
-    let autoLearned = false
+    let translationSaved = false
     const render = () => {
       if (seq !== this.lookupSeq) return
       const translation = this.chooseTranslation(data)
       if (!translation && data.pendingSources > 0) return // nothing to show yet
       this.showTooltip(data, translation || '(no translation)', x, y)
-      // Clicking a word you didn't know = the "I'm learning this" signal
-      if (translation && !autoLearned && this.activeLemma) {
-        autoLearned = true
-        if (this.statusApi.statusFor(this.activeLemma) === 'unknown') {
-          this.statusApi.set(this.activeLemma, 'learning', { translation, context, level: 1 })
-        }
+      // Persist the translation onto the word we just auto-marked as learning
+      if (translation && !translationSaved && wasUnknown && this.activeLemma) {
+        translationSaved = true
+        this.statusApi.setTranslation(this.activeLemma, translation)
       }
     }
 
