@@ -14,7 +14,7 @@ import { invalidateLemmaCache, lemmatizeBatch } from './lemmatizer'
 // Language-data artifacts are built offline by scripts/build-lang-data.mjs.
 // pl/de/en ship inside the extension (public/data/); anything else is
 // fetched from the repo.
-const DATA_BASE = 'https://raw.githubusercontent.com/NotXave/znam/master/public/data'
+const DATA_BASE = 'https://raw.githubusercontent.com/NotXave/znam/main/public/data'
 
 const INSERT_BATCH = 5000
 
