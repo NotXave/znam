@@ -157,7 +157,7 @@ async function installLanguageData(
   }
 }
 
-async function relemmatizeWords(lang: string): Promise<number> {
+export async function relemmatizeWords(lang: string): Promise<number> {
   const words = await getAllWords(lang)
   if (words.length === 0) return 0
   const lemmaMap = await lemmatizeBatch(lang, words.map(w => w.lemma))

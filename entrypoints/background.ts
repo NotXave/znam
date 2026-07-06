@@ -16,7 +16,7 @@ import {
   putLibraryEntry,
   putWords,
 } from '../utils/db'
-import { handleSetupPort, languageState, setCalibratedAt } from '../utils/language-setup'
+import { handleSetupPort, languageState, relemmatizeWords, setCalibratedAt } from '../utils/language-setup'
 import { calibrationLemmas, calibrationSample, estimateKnownRank } from '../utils/calibration'
 import { getFreqRanks, getVideoScores, putVideoScore } from '../utils/db'
 import { scoreTokens } from '../utils/scoring'
@@ -174,12 +174,25 @@ function serializeWordWrite<T>(fn: () => Promise<T>): Promise<T> {
   return run
 }
 
+/**
+ * Normalize a clicked word to its canonical lemma. A word clicked before its
+ * subtitle line finished analyzing arrives as a surface form; normalizing here
+ * means it's always stored under the same key as its other inflections
+ * (idempotent — an already-resolved lemma maps to itself).
+ */
+async function resolveLemma(lang: string, word: string): Promise<string> {
+  const lower = word.toLowerCase()
+  const m = await lemmatizeBatch(lang, [lower])
+  return m.get(lower) ?? lower
+}
+
 function setWordStatus(payload: Extract<Message, { type: 'SET_WORD_STATUS' }>['payload']): Promise<{ ok: true }> {
   return serializeWordWrite(() => setWordStatusImpl(payload))
 }
 
 async function setWordStatusImpl(payload: Extract<Message, { type: 'SET_WORD_STATUS' }>['payload']): Promise<{ ok: true }> {
-  const { lang, lemma, status } = payload
+  const { lang, status } = payload
+  const lemma = await resolveLemma(lang, payload.lemma)
   const statuses = await statusMapFor(lang)
   if (status === 'unknown') {
     statuses.delete(lemma)
@@ -217,7 +230,8 @@ function setWordTranslation(payload: { lang: string; lemma: string; translation:
 }
 
 async function setWordTranslationImpl(payload: { lang: string; lemma: string; translation: string }): Promise<{ ok: true }> {
-  const { lang, lemma, translation } = payload
+  const { lang, translation } = payload
+  const lemma = await resolveLemma(lang, payload.lemma)
   const statuses = await statusMapFor(lang)
   const existing = await getWord(lang, lemma)
   const now = Date.now()
@@ -241,7 +255,8 @@ function recordLookup(lang: string, lemma: string): Promise<{ lookups: number }>
   return serializeWordWrite(() => recordLookupImpl(lang, lemma))
 }
 
-async function recordLookupImpl(lang: string, lemma: string): Promise<{ lookups: number }> {
+async function recordLookupImpl(lang: string, rawLemma: string): Promise<{ lookups: number }> {
+  const lemma = await resolveLemma(lang, rawLemma)
   const statuses = await statusMapFor(lang)
   const existing = await getWord(lang, lemma)
   const now = Date.now()
@@ -319,6 +334,28 @@ async function scoreVideos(lang: string, videoIds: string[]): Promise<Record<str
 // ── Entry point ─────────────────────────────────────────────
 
 export default defineBackground(() => {
+  // One-time cleanup: earlier builds could store a word under its surface form
+  // if it was clicked before its line finished analyzing. Re-key those to their
+  // lemma so they merge with their inflections. Runs once per language.
+  ;(async () => {
+    try {
+      const { targetLanguage } = await getSettings()
+      const { normalizedLangs } = await browser.storage.local.get('normalizedLangs')
+      const done = (normalizedLangs as Record<string, boolean>) ?? {}
+      if (done[targetLanguage]) return
+      const { countLemmaRows } = await import('../utils/db')
+      if ((await countLemmaRows(targetLanguage)) === 0) return // no dictionary yet
+      const moved = await relemmatizeWords(targetLanguage)
+      statusMaps.delete(targetLanguage)
+      statusLoads.delete(targetLanguage)
+      done[targetLanguage] = true
+      await browser.storage.local.set({ normalizedLangs: done })
+      if (moved > 0) console.info(`[znam] normalized ${moved} words to lemmas for ${targetLanguage}`)
+    } catch (e) {
+      console.warn('[znam] normalization pass failed', e)
+    }
+  })()
+
   browser.commands.onCommand.addListener(async (command) => {
     if (command !== 'toggle-reader') return
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true })
