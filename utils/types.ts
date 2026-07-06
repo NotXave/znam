@@ -92,6 +92,8 @@ export interface Settings {
   shortsLoop: boolean
   /** Playback speed for shorts. */
   shortsSpeed: number
+  /** Show the native-language translation line under the shorts subtitle. */
+  shortsDualSubs: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -103,6 +105,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shortsMinScore: 0.5,
   shortsLoop: false,
   shortsSpeed: 1,
+  shortsDualSubs: true,
 }
 
 // ── Lookup results (reused from manga-translator) ───────────

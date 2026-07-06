@@ -545,12 +545,22 @@ export default defineContentScript({
       const diffLabel = settings.shortsMinScore > 0 ? `≥${Math.round(settings.shortsMinScore * 100)}%` : 'Any level'
       bar.innerHTML = `
         <button class="ci-freeze" title="Freeze the subtitle so you can read/click it calmly (pause), then resume">⏸ Freeze</button>
+        <button class="ci-dual ${settings.shortsDualSubs ? 'active' : ''}" title="Show the translation line under the subtitle (dual subtitles)">🈂 Dual</button>
         <button class="ci-loop ${settings.shortsLoop ? 'active' : ''}" title="Loop this short for repetition">🔁 Loop</button>
         <button class="ci-speed" title="Playback speed">${settings.shortsSpeed}×</button>
         <button class="ci-diff" title="Only play shorts at or above this comprehension">🎯 ${diffLabel}</button>
         <button class="ci-skip-toggle ${settings.shortsAutoSkip ? 'active' : ''}" title="Auto-skip shorts without ${lang} subtitles">${lang} only</button>
         <button class="ci-skip-now" title="Skip this short">⏭</button>`
       bar.querySelector('.ci-freeze')!.addEventListener('click', toggleShortsFreeze)
+      bar.querySelector('.ci-dual')!.addEventListener('click', async () => {
+        await saveShortsSettings({ shortsDualSubs: !settings!.shortsDualSubs })
+        renderShortsControls()
+        if (shortsCueIndex >= 0) renderShortsCue(shortsCueIndex)
+        else {
+          const n = shortsOverlay?.querySelector('.ci-sub-native') as HTMLElement | null
+          if (n) n.style.display = settings!.shortsDualSubs ? '' : 'none'
+        }
+      })
       bar.querySelector('.ci-loop')!.addEventListener('click', async () => {
         await saveShortsSettings({ shortsLoop: !settings!.shortsLoop })
         applyPlaybackPrefs()
@@ -713,6 +723,13 @@ export default defineContentScript({
       for (const node of collectTextNodes(target)) spans.push(...wrapTextNode(node))
       for (const s of spans) paintSpan(s)
 
+      // Native translation line only when dual subtitles are on
+      if (!settings.shortsDualSubs) {
+        native.style.display = 'none'
+        native.textContent = ''
+        return
+      }
+      native.style.display = ''
       if (shortsNativeCache.has(index)) {
         native.textContent = shortsNativeCache.get(index)!
       } else {
@@ -723,7 +740,7 @@ export default defineContentScript({
         }).catch(() => null)
         const translated = (r && typeof r === 'object' ? r.text : '') || ''
         shortsNativeCache.set(index, translated)
-        if (shortsCueIndex === index) native.textContent = translated
+        if (shortsCueIndex === index && settings.shortsDualSubs) native.textContent = translated
       }
     }
 
