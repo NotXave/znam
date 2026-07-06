@@ -495,6 +495,22 @@ export default defineContentScript({
       return vids.find(v => !v.paused && v.offsetParent) || vids.find(v => v.offsetParent) || null
     }
 
+    // Freeze = pause the short so the current subtitle line holds still for
+    // reading/clicking; press again to resume. Reflects the video's play state.
+    function toggleShortsFreeze() {
+      const v = shortsVideo()
+      if (!v) return
+      if (v.paused) v.play(); else v.pause()
+      updateFreezeBtn()
+    }
+    function updateFreezeBtn() {
+      const b = shortsOverlay?.querySelector('.ci-freeze') as HTMLElement | null
+      const v = shortsVideo()
+      if (!b || !v) return
+      b.textContent = v.paused ? '▶ Resume' : '⏸ Freeze'
+      b.classList.toggle('active', v.paused)
+    }
+
     function clickNextShort() {
       const btn =
         document.querySelector<HTMLElement>('#navigation-button-down button') ||
@@ -523,11 +539,13 @@ export default defineContentScript({
       const lang = settings.targetLanguage
       const diffLabel = settings.shortsMinScore > 0 ? `≥${Math.round(settings.shortsMinScore * 100)}%` : 'Any level'
       bar.innerHTML = `
+        <button class="ci-freeze" title="Freeze the subtitle so you can read/click it calmly (pause), then resume">⏸ Freeze</button>
         <button class="ci-loop ${settings.shortsLoop ? 'active' : ''}" title="Loop this short for repetition">🔁 Loop</button>
         <button class="ci-speed" title="Playback speed">${settings.shortsSpeed}×</button>
         <button class="ci-diff" title="Only play shorts at or above this comprehension">🎯 ${diffLabel}</button>
         <button class="ci-skip-toggle ${settings.shortsAutoSkip ? 'active' : ''}" title="Auto-skip shorts without ${lang} subtitles">${lang} only</button>
         <button class="ci-skip-now" title="Skip this short">⏭</button>`
+      bar.querySelector('.ci-freeze')!.addEventListener('click', toggleShortsFreeze)
       bar.querySelector('.ci-loop')!.addEventListener('click', async () => {
         await saveShortsSettings({ shortsLoop: !settings!.shortsLoop })
         applyPlaybackPrefs()
@@ -658,6 +676,7 @@ export default defineContentScript({
       const tick = () => {
         if (!shortsOverlay?.isConnected) return
         const v = shortsVideo()
+        updateFreezeBtn()
         if (v && shortsCues.length) {
           // YouTube resets loop/rate when it swaps the <video> between shorts
           if (settings && (v.playbackRate !== settings.shortsSpeed || v.loop !== settings.shortsLoop)) {
@@ -924,6 +943,7 @@ export default defineContentScript({
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       const key = e.key.toLowerCase()
       if (key === 's') { e.preventDefault(); clickNextShort() }
+      else if (key === 'f') { e.preventDefault(); toggleShortsFreeze() }
       else if (key === 'r') { const v = shortsVideo(); if (v) { v.currentTime = 0; v.play() } }
       else if (key === 'l') {
         saveShortsSettings({ shortsLoop: !settings?.shortsLoop }).then(() => { applyPlaybackPrefs(); renderShortsControls() })

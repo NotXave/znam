@@ -238,8 +238,8 @@ export class ReaderTooltip {
       this.statusApi.set(this.activeLemma, 'learning', { level: 1, context })
     }
 
-    // DeepL is rate-limited hard, so it's only queried when chosen as primary
-    const useDeepl = this.primaryTranslation === 'deepl'
+    // Always query DeepL too, so its translation is available to compare and
+    // pick in the dropdown (throttled + cached in the background).
     const data: LookupData = {
       word: label,
       googleText: '',
@@ -249,7 +249,7 @@ export class ReaderTooltip {
       definitions: [],
       reverso: { translations: [], examples: [] },
       isPhrase,
-      pendingSources: (isPhrase ? 2 : 3) + (useDeepl ? 1 : 0),
+      pendingSources: (isPhrase ? 2 : 3) + 1,
     }
 
     let translationSaved = false
@@ -285,15 +285,13 @@ export class ReaderTooltip {
       done()
     })
 
-    if (useDeepl) {
-      this.msgWithTimeout({ type: 'DEEPL_LOOKUP', payload: { text, from, to } }, 10000).then((r) => {
-        if (r && typeof r === 'object') {
-          data.deeplText = (r as { text: string }).text || ''
-          data.deeplAlternatives = (r as { alternatives: string[] }).alternatives || []
-        }
-        done()
-      })
-    }
+    this.msgWithTimeout({ type: 'DEEPL_LOOKUP', payload: { text, from, to } }, 12000).then((r) => {
+      if (r && typeof r === 'object') {
+        data.deeplText = (r as { text: string }).text || ''
+        data.deeplAlternatives = (r as { alternatives: string[] }).alternatives || []
+      }
+      done()
+    })
 
     if (!isPhrase) {
       this.msgWithTimeout({ type: 'DICTIONARY_LOOKUP', payload: { word: text, lang: from } }, 8000).then((r) => {

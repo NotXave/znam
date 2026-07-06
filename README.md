@@ -14,9 +14,12 @@ i+1 sweet spot.
   Words are wrapped in clickable spans: click for a translation tooltip
   (Google Translate + Reverso Context + Wiktionary, rendered progressively),
   drag across words to translate a phrase, right-click for the whole sentence.
-  Optionally DeepL via its unofficial web endpoint (popup → Primary source);
-  it is heavily rate-limited, so it's cached, throttled, and only queried when
-  selected — Google always runs in parallel as fallback.
+  DeepL is queried alongside Google/Reverso via its unofficial web endpoint,
+  so its translation and alternatives always appear in the dropdown to compare
+  and pick from (the pick is saved to the word). Requests are serialized on a
+  ~1.2 s queue with a short cooldown + one retry, which keeps the rate-limited
+  free endpoint reliable even during click bursts; set it as the default in
+  the popup → Primary source.
 - **Word knowledge** — every word is `unknown`, `learning`, `known`, or
   `ignored`. Clicking an unknown word auto-marks it *learning*; tooltip
   buttons switch status. Unknown words get a blue tint, learning words yellow.
