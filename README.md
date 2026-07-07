@@ -87,8 +87,14 @@ npm install
 npm run build          # → .output/firefox-mv2
 ```
 
-Load in Firefox via `about:debugging` → *This Firefox* → *Load Temporary
-Add-on* → pick `.output/firefox-mv2/manifest.json`.
+**Permanent install** (survives restarts): see **[INSTALL.md](INSTALL.md)** —
+sign it as an unlisted add-on with `npm run sign` (needs free Mozilla API
+keys) and install the resulting `.xpi` via `about:addons`, or let the GitHub
+release workflow build a signed `.xpi` for you.
+
+**Quick test only** (temporary, gone on restart): Firefox `about:debugging` →
+*This Firefox* → *Load Temporary Add-on* → pick
+`.output/firefox-mv2/manifest.json`.
 
 Then open the popup → *Open library & words* → **Languages** → *Install* for
 your target language.

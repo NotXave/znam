@@ -27,6 +27,9 @@ export default defineConfig({
         gecko: {
           id: 'znam@notxave.github.io',
           strict_min_version: '121.0',
+          // znam sends no data to its own servers; word lookups go to the
+          // translation/dictionary services the user chose, and stay local.
+          data_collection_permissions: { required: ['none'] },
         },
       },
     }),

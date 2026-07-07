@@ -1,0 +1,44 @@
+name: Sign & release
+
+# Builds the extension, signs it as an unlisted add-on via Mozilla AMO, and
+# attaches the installable .xpi to a GitHub Release.
+# Requires repo secrets AMO_JWT_ISSUER and AMO_JWT_SECRET
+# (from https://addons.mozilla.org/developers/addon/api/key/).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Sign (unlisted) via AMO
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: >
+          npx web-ext sign
+          --source-dir .output/firefox-mv2
+          --artifacts-dir web-ext-artifacts
+          --channel unlisted
+
+      - name: Attach .xpi to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: web-ext-artifacts/*.xpi
+          fail_on_unmatched_files: true

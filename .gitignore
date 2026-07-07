@@ -2,3 +2,5 @@ node_modules/
 .output/
 .wxt/
 *.log
+
+web-ext-artifacts/
