@@ -262,8 +262,10 @@ export class ReaderTooltip {
     let translationSaved = false
     const render = () => {
       if (seq !== this.lookupSeq) return
-      // A manual pick wins over the auto-chosen primary on every later render
-      const translation = this.pickedTranslation || this.chooseTranslation(data)
+      // Once the user has picked a translation, don't let a slow late source
+      // (e.g. DeepL) rebuild the tooltip and disturb their choice.
+      if (this.pickedTranslation) return
+      const translation = this.chooseTranslation(data)
       if (!translation && data.pendingSources > 0) return // nothing to show yet
       this.showTooltip(data, translation || '(no translation)', x, y)
       // Persist the translation onto the word we just auto-marked as learning
