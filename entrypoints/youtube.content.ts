@@ -204,6 +204,11 @@ export default defineContentScript({
         ytInteracted.add(lemma)
         send({ type: 'RECORD_LOOKUP', payload: { lang: settings.targetLanguage, lemma } }).catch(() => {})
       },
+      async getSavedTranslation(lemma) {
+        if (!settings) return undefined
+        const r = await send({ type: 'GET_WORD_TRANSLATION', payload: { lang: settings.targetLanguage, lemma } }).catch(() => null)
+        return r && typeof r === 'object' ? r.translation : undefined
+      },
     }
 
     const tooltip = new ReaderTooltip(send, statusApi)

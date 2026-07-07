@@ -158,6 +158,8 @@ export type Message =
       }
     }
   | { type: 'SET_WORD_TRANSLATION'; payload: { lang: string; lemma: string; translation: string } }
+  /** Read back a word's saved translation (to restore the user's choice). */
+  | { type: 'GET_WORD_TRANSLATION'; payload: { lang: string; lemma: string } }
   /** Count that the user looked this word up (increments its lookups). */
   | { type: 'RECORD_LOOKUP'; payload: { lang: string; lemma: string } }
   /** Learning words seen while reading (not looked up) → advance toward next level. */

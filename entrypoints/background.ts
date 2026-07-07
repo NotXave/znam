@@ -421,6 +421,13 @@ export default defineBackground(() => {
         case 'SET_WORD_TRANSLATION':
           return await setWordTranslation(message.payload)
 
+        case 'GET_WORD_TRANSLATION': {
+          const { lang } = message.payload
+          const lemma = await resolveLemma(lang, message.payload.lemma)
+          const rec = await getWord(lang, lemma)
+          return { translation: rec?.translation }
+        }
+
         case 'RECORD_LOOKUP':
           return await recordLookup(message.payload.lang, message.payload.lemma)
 

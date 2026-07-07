@@ -108,6 +108,11 @@ export default defineContentScript({
         interactedLemmas.add(lemma)
         sendMessage({ type: 'RECORD_LOOKUP', payload: { lang: settings.targetLanguage, lemma } }).catch(() => {})
       },
+      async getSavedTranslation(lemma) {
+        if (!settings) return undefined
+        const r = await sendMessage({ type: 'GET_WORD_TRANSLATION', payload: { lang: settings.targetLanguage, lemma } }).catch(() => null)
+        return r && typeof r === 'object' ? r.translation : undefined
+      },
     }
 
     // Record passive exposures: learning words present on the page that the

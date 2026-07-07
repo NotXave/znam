@@ -32,6 +32,8 @@ export interface WordStatusApi {
   setTranslation(lemma: string, translation: string): void
   /** Count that the user looked this word up (a "hard word" signal). */
   recordLookup(lemma: string): void
+  /** The translation the user previously saved for this word, if any. */
+  getSavedTranslation(lemma: string): Promise<string | undefined>
 }
 
 const BLOCK_SELECTOR = 'p,li,blockquote,h1,h2,h3,h4,h5,h6,td,dd,figcaption,article,div'
@@ -262,17 +264,28 @@ export class ReaderTooltip {
     let translationSaved = false
     const render = () => {
       if (seq !== this.lookupSeq) return
-      // Once the user has picked a translation, don't let a slow late source
-      // (e.g. DeepL) rebuild the tooltip and disturb their choice.
-      if (this.pickedTranslation) return
-      const translation = this.chooseTranslation(data)
+      // A saved/picked translation stays the current one across every render
+      // (fresh sources fill the dropdown but never override the user's choice).
+      const translation = this.pickedTranslation || this.chooseTranslation(data)
       if (!translation && data.pendingSources > 0) return // nothing to show yet
       this.showTooltip(data, translation || '(no translation)', x, y)
-      // Persist the translation onto the word we just auto-marked as learning
-      if (translation && !translationSaved && wasUnknown && this.activeLemma) {
+      // Auto-save the primary only for a brand-new word with no saved choice
+      if (translation && !translationSaved && wasUnknown && this.activeLemma && !this.pickedTranslation) {
         translationSaved = true
         this.statusApi.setTranslation(this.activeLemma, translation)
       }
+    }
+
+    // Restore a previously chosen translation for this word so reopening it
+    // shows your pick, not the default source again.
+    if (this.activeLemma) {
+      this.statusApi.getSavedTranslation(this.activeLemma).then((saved) => {
+        if (seq !== this.lookupSeq) return
+        if (saved && !this.pickedTranslation) {
+          this.pickedTranslation = saved
+          render()
+        }
+      }).catch(() => {})
     }
 
     const done = () => {
