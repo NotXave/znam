@@ -685,6 +685,33 @@ export default defineContentScript({
         }
         applyPlaybackPrefs()
         startShortsSync()
+
+        // Count this short in the library once it's genuinely watched (~5s),
+        // so the immersion feed contributes to the YouTube comprehension
+        // estimate. Deduped by video id; quickly-skipped shorts don't save.
+        if (score.countableTokens >= 6) {
+          setTimeout(() => {
+            if (videoId !== currentVideoId) return
+            send({
+              type: 'SAVE_LIBRARY_ENTRY',
+              payload: {
+                id: `yt:${videoId}`,
+                url: `https://www.youtube.com/shorts/${videoId}`,
+                title: video.title || 'YouTube Short',
+                lang,
+                kind: 'youtube',
+                score: score.score,
+                countableTokens: score.countableTokens,
+                knownTokens: score.knownTokens,
+                uniqueLemmas: Object.keys(score.lemmaCounts).length,
+                unknownLemmas: score.uniqueUnknown.length,
+                lemmaCounts: score.lemmaCounts,
+                excerpt: cues.map(c => c.text).join(' ').slice(0, 200),
+                pinned: false,
+              },
+            }).catch(() => {})
+          }, 5000)
+        }
       } catch (err) {
         console.warn('[znam shorts]', err)
         if (videoId === currentVideoId) setShortsScore('n/a')

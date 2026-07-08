@@ -19,7 +19,7 @@ import {
 import { handleSetupPort, languageState, relemmatizeWords, setCalibratedAt } from '../utils/language-setup'
 import { calibrationLemmas, calibrationSample, estimateKnownRank } from '../utils/calibration'
 import { getFreqRanks, getVideoScores, putVideoScore } from '../utils/db'
-import { scoreTokens } from '../utils/scoring'
+import { rescoreLemmaCounts, scoreTokens } from '../utils/scoring'
 import { tokenize } from '../utils/tokenizer'
 import { fetchCaptionText, fetchVideoInfo, pickTrack } from '../utils/youtube-captions'
 import type { LibraryEntry } from '../utils/types'
@@ -148,16 +148,39 @@ async function computeStats(lang: string) {
     ? library.reduce((s, e) => s + e.score, 0) / library.length
     : 0
 
+  // YouTube comprehension estimate — rescored live against current knowledge,
+  // token-weighted across watched videos. Unlocks after enough videos so the
+  // number is meaningful rather than noise from one or two clips.
+  const statusMap = new Map<string, { status: WordStatus; level?: LearningLevel }>()
+  for (const w of words) statusMap.set(w.lemma, { status: w.status, level: w.level })
+  const ytEntries = library.filter(e => e.kind === 'youtube')
+  let ytWeighted = 0
+  let ytTokens = 0
+  for (const e of ytEntries) {
+    const r = rescoreLemmaCounts(e.lemmaCounts || {}, l => statusMap.get(l))
+    ytWeighted += r.score * r.countableTokens
+    ytTokens += r.countableTokens
+  }
+  const YT_UNLOCK = 5
+  const youtube = {
+    count: ytEntries.length,
+    unlockAt: YT_UNLOCK,
+    unlocked: ytEntries.length >= YT_UNLOCK,
+    estimate: ytTokens > 0 ? ytWeighted / ytTokens : 0,
+    watchedThisWeek: ytEntries.filter(e => now - e.updatedAt < 7 * DAY).length,
+  }
+
   return {
     counts,
     levels,
     addedThisWeek,
     daily,
     totalWords: words.length,
+    youtube,
     library: {
       total: library.length,
       pages: library.filter(e => e.kind === 'page').length,
-      videos: library.filter(e => e.kind === 'youtube').length,
+      videos: ytEntries.length,
       readThisWeek: readThisWeek.length,
       sweetSpot,
       avgScore,
