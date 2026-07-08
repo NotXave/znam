@@ -178,6 +178,7 @@ export default defineContentScript({
         }
         lemmaStatus.set(lemma, { status, level: status === 'learning' ? (extras?.level ?? 1) : undefined })
         repaintLemma(lemma)
+        scheduleWatchRescore()
         send({
           type: 'SET_WORD_STATUS',
           payload: {
@@ -236,7 +237,7 @@ export default defineContentScript({
       if (!info) return undefined
       const live = lemmaStatus.get(info.lemma)
       if (!live || (live.status === info.status && live.level === info.level)) return info
-      return { lemma: info.lemma, status: live.status, level: live.level }
+      return { lemma: info.lemma, status: live.status, level: live.level, rank: info.rank }
     }
 
     const HIGHLIGHT_CLASSES = ['ci-unknown', 'ci-l1', 'ci-l2', 'ci-l3', 'ci-l4', 'ci-l5']
@@ -805,10 +806,64 @@ export default defineContentScript({
       badge.innerHTML = html
     }
 
+    // Kept so the badge + library entry can be rescored live as you mark words
+    let watchTokens: string[] = []
+    let watchMeta: { videoId: string; title: string; channel: string; isAsr: boolean; excerpt: string } | null = null
+    let watchRescoreTimer: ReturnType<typeof setTimeout> | null = null
+
+    function renderWatchBadge(score: ReturnType<typeof scoreTokens>) {
+      const pct = Math.round(score.score * 100)
+      setBadge(
+        `${pct}% <span class="ci-label">${difficultyLabel(score.score)}${watchMeta?.isAsr ? ' · auto-subs' : ''}</span>` +
+        `<button class="ci-panel-toggle" title="Show a pinned, clickable subtitle panel below the video">📌 Subtitles</button>`,
+      )
+      document.getElementById('ci-yt-badge')?.querySelector('.ci-panel-toggle')
+        ?.addEventListener('click', toggleSubtitlePanel)
+    }
+
+    function saveWatchEntry(score: ReturnType<typeof scoreTokens>) {
+      if (!watchMeta || !settings) return
+      send({
+        type: 'SAVE_LIBRARY_ENTRY',
+        payload: {
+          id: `yt:${watchMeta.videoId}`,
+          url: `https://www.youtube.com/watch?v=${watchMeta.videoId}`,
+          title: watchMeta.title,
+          lang: settings.targetLanguage,
+          kind: 'youtube',
+          channel: watchMeta.channel || undefined,
+          score: score.score,
+          countableTokens: score.countableTokens,
+          knownTokens: score.knownTokens,
+          uniqueLemmas: Object.keys(score.lemmaCounts).length,
+          unknownLemmas: score.uniqueUnknown.length,
+          lemmaCounts: score.lemmaCounts,
+          excerpt: watchMeta.excerpt,
+          pinned: false,
+        },
+      }).catch(() => {})
+    }
+
+    // Recompute the badge + library score from current knowledge (debounced),
+    // so learning words while watching updates the % without a reload.
+    function scheduleWatchRescore() {
+      if (!watchTokens.length || location.pathname.startsWith('/shorts/')) return
+      if (watchMeta && watchMeta.videoId !== currentVideoId) return
+      if (watchRescoreTimer) clearTimeout(watchRescoreTimer)
+      watchRescoreTimer = setTimeout(() => {
+        const score = scoreTokens(watchTokens, t => statusOf(t))
+        if (score.countableTokens < 30) return
+        renderWatchBadge(score)
+        saveWatchEntry(score)
+      }, 700)
+    }
+
     async function scoreWatchPage(videoId: string) {
       if (!settings) settings = await send({ type: 'GET_SETTINGS' })
       if (!settings) return
       const lang = settings.targetLanguage
+      watchTokens = []
+      watchMeta = null
       setBadge('⏳')
 
       try {
@@ -840,34 +895,17 @@ export default defineContentScript({
           setBadge(`<span class="ci-label">subs too short</span>`)
           return
         }
-        const pct = Math.round(score.score * 100)
-        setBadge(
-          `${pct}% <span class="ci-label">${difficultyLabel(score.score)}${track.isAsr ? ' · auto-subs' : ''}</span>` +
-          `<button class="ci-panel-toggle" title="Show a pinned, clickable subtitle panel below the video">📌 Subtitles</button>`,
-        )
-        document.getElementById('ci-yt-badge')?.querySelector('.ci-panel-toggle')
-          ?.addEventListener('click', toggleSubtitlePanel)
+        watchTokens = tokens
+        watchMeta = {
+          videoId,
+          title: video.title || document.title.replace(/ - YouTube$/, ''),
+          channel: video.channel || '',
+          isAsr: track.isAsr,
+          excerpt: text.slice(0, 200),
+        }
+        renderWatchBadge(score)
         if (subtitlePanelOn) openSubtitlePanel()
-
-        send({
-          type: 'SAVE_LIBRARY_ENTRY',
-          payload: {
-            id: `yt:${videoId}`,
-            url: `https://www.youtube.com/watch?v=${videoId}`,
-            title: video.title || document.title.replace(/ - YouTube$/, ''),
-            lang,
-            kind: 'youtube',
-            channel: video.channel || undefined,
-            score: score.score,
-            countableTokens: score.countableTokens,
-            knownTokens: score.knownTokens,
-            uniqueLemmas: Object.keys(score.lemmaCounts).length,
-            unknownLemmas: score.uniqueUnknown.length,
-            lemmaCounts: score.lemmaCounts,
-            excerpt: text.slice(0, 200),
-            pinned: false,
-          },
-        }).catch(() => {})
+        saveWatchEntry(score)
       } catch (err) {
         console.warn('[znam yt]', err)
         if (videoId === currentVideoId) setBadge(`<span class="ci-label">n/a</span>`)

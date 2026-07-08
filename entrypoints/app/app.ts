@@ -430,6 +430,17 @@ async function init() {
     b.addEventListener('click', () => switchTab((b as HTMLElement).dataset.tab!)),
   )
 
+  // Refresh the current tab when you come back to this page (e.g. after
+  // watching a video in another tab) so scores reflect the words you learned.
+  const refreshActiveTab = () => {
+    const t = (document.querySelector('nav button.active') as HTMLElement | null)?.dataset.tab
+    if (t) refreshers[t]?.()
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshActiveTab()
+  })
+  window.addEventListener('focus', refreshActiveTab)
+
   $('lib-pinned-only').addEventListener('change', renderLibrary)
   $('lib-sort').addEventListener('change', renderLibrary)
 

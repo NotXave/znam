@@ -137,7 +137,7 @@ export default defineContentScript({
       if (!info) return undefined
       const live = lemmaStatus.get(info.lemma)
       if (!live || (live.status === info.status && live.level === info.level)) return info
-      return { lemma: info.lemma, status: live.status, level: live.level }
+      return { lemma: info.lemma, status: live.status, level: live.level, rank: info.rank }
     }
 
     const HIGHLIGHT_CLASSES = ['ci-unknown', 'ci-l1', 'ci-l2', 'ci-l3', 'ci-l4', 'ci-l5']
