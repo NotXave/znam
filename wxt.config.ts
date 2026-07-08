@@ -4,7 +4,7 @@ export default defineConfig({
   suppressWarnings: { firefoxDataCollection: true },
   manifest: ({ browser }) => ({
     name: 'znam',
-    version: '0.1.4',
+    version: '0.1.5',
     description:
       'Comprehensible-input reader — tracks the words you know and scores any page by how much of it you understand',
     permissions: ['storage', 'downloads', 'tabs'],

@@ -49,6 +49,8 @@ export interface LibraryEntry {
   title: string
   lang: string
   kind: 'page' | 'youtube'
+  /** YouTube channel / author name (for grouping and sorting). */
+  channel?: string
   score: number
   countableTokens: number
   knownTokens: number

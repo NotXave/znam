@@ -10,6 +10,7 @@ export interface CaptionTrack {
 
 export interface VideoInfo {
   title: string
+  channel: string
   tracks: CaptionTrack[]
 }
 
@@ -51,7 +52,11 @@ export async function fetchVideoInfo(videoId: string): Promise<VideoInfo> {
       const status = data?.playabilityStatus?.status
       const tracks = parseTracks(data)
       if (tracks.length > 0 || status === 'OK') {
-        return { title: data?.videoDetails?.title || '', tracks }
+        return {
+          title: data?.videoDetails?.title || '',
+          channel: data?.videoDetails?.author || '',
+          tracks,
+        }
       }
       lastError = `playability ${status}`
     } catch (e: any) {

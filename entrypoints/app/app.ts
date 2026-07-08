@@ -161,6 +161,15 @@ async function renderLibrary() {
   if (sort === 'score-desc') items.sort((a, b) => b.score - a.score)
   else if (sort === 'score-asc') items.sort((a, b) => a.score - b.score)
   else if (sort === 'date') items.sort((a, b) => b.updatedAt - a.updatedAt)
+  else if (sort === 'channel') {
+    // Group by channel (A–Z); items without one (web pages) go last, most
+    // comprehensible first within each channel.
+    items.sort((a, b) => {
+      const ca = a.channel || '￿'
+      const cb = b.channel || '￿'
+      return ca.localeCompare(cb) || b.score - a.score
+    })
+  }
   else if (sort === 'sweet') {
     const key = (e: LibraryEntry) => {
       if (e.score >= 0.9 && e.score <= 0.98) return 2 + e.score
@@ -183,12 +192,14 @@ async function renderLibrary() {
       <span class="score-pill score-${label.replace(' ', '-').replace('sweet-spot', 'sweet')}" title="${label}">${pct}%</span>
       <div class="grow">
         <a href="${e.url}" target="_blank" rel="noopener"></a>
-        <div class="meta">${e.kind === 'youtube' ? '▶ ' : ''}${e.unknownLemmas} unknown words · ${e.countableTokens.toLocaleString()} tokens · ${new Date(e.updatedAt).toLocaleDateString()}</div>
+        <div class="meta"><span class="ci-channel"></span>${e.unknownLemmas} unknown words · ${e.countableTokens.toLocaleString()} tokens · ${new Date(e.updatedAt).toLocaleDateString()}</div>
       </div>
       <button class="pin" title="Pin to reading list">${e.pinned ? '★' : '☆'}</button>
       <button class="del" title="Remove">✕</button>
     `
     ;(item.querySelector('a') as HTMLElement).textContent = e.title
+    ;(item.querySelector('.ci-channel') as HTMLElement).textContent =
+      e.kind === 'youtube' ? `▶ ${e.channel ? e.channel + ' · ' : ''}` : ''
     item.querySelector('.pin')!.addEventListener('click', async () => {
       await send({ type: 'SET_LIBRARY_PINNED', payload: { id: e.id, pinned: !e.pinned } })
       renderLibrary()
