@@ -228,7 +228,16 @@ export class ReaderTooltip {
   private startLookup(text: string, x: number, y: number, isPhrase: boolean, target: LookupTarget, span?: HTMLElement) {
     const seq = ++this.lookupSeq
     this.activeWord = text
-    this.activeLemma = span && !isPhrase ? this.statusApi.lemmaFor(span) : ''
+    // Single word → its lemma. Short phrase (2–4 words) → saveable as a
+    // multi-word vocab item keyed by the phrase itself. Longer selections
+    // (e.g. a right-clicked sentence) aren't saved, only translated.
+    if (isPhrase) {
+      const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim()
+      const wordCount = normalized.split(' ').length
+      this.activeLemma = wordCount >= 2 && wordCount <= 4 && normalized.length <= 40 ? normalized : ''
+    } else {
+      this.activeLemma = span ? this.statusApi.lemmaFor(span) : ''
+    }
     this.ddOpen = false
     this.pickedTranslation = null
     this.openedAtScrollY = window.scrollY
