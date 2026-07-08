@@ -375,6 +375,19 @@ export class ReaderTooltip {
   // Lute-style level colors: 1 = just met (red) … 5 = almost known (green)
   static readonly LEVEL_COLORS = ['#c14b4b', '#c1774b', '#b8a12e', '#8fa32e', '#5d9e4a']
 
+  private savedFooterHtml(isPhrase: boolean): string {
+    if (!this.activeLemma) {
+      // A right-clicked sentence / long phrase isn't saved as a word
+      return isPhrase
+        ? `<div style="margin-top:6px;font-size:10px;color:#666;border-top:1px solid #1a1a30;padding-top:4px">Too long to save as a word</div>`
+        : ''
+    }
+    const saved = this.statusApi.statusFor(this.activeLemma) !== 'unknown'
+    return `<div style="margin-top:6px;font-size:10px;color:${saved ? '#5d9e4a' : '#666'};border-top:1px solid #1a1a30;padding-top:4px">${
+      saved ? `✓ Saved to your ${isPhrase ? 'phrases' : 'words'}` : 'Removed from your words'
+    }</div>`
+  }
+
   private statusRowHtml(): string {
     if (!this.activeLemma) return ''
     const status = this.statusApi.statusFor(this.activeLemma)
@@ -479,6 +492,7 @@ export class ReaderTooltip {
         ${dropdownContent}
       </div>
       ${this.statusRowHtml()}
+      ${this.savedFooterHtml(data.isPhrase)}
     `
 
     const toggle = this.tooltip.querySelector('.ci-dd-toggle') as HTMLElement | null
