@@ -357,10 +357,15 @@ export class ReaderTooltip {
   // Reuse the tooltip element across updates — recreating it would replay
   // the fade-in animation on every progressive render (visible blinking).
   private ensureTooltip(): HTMLElement {
-    if (!this.tooltip || !this.tooltip.isConnected) {
-      this.tooltip = document.createElement('div')
-      this.tooltip.id = 'ci-tooltip'
-      document.body.appendChild(this.tooltip)
+    // In fullscreen only the fullscreen element renders, so mount the tooltip
+    // there (e.g. the YouTube player) — otherwise it would be invisible.
+    const host = document.fullscreenElement || document.body
+    if (!this.tooltip || !this.tooltip.isConnected || this.tooltip.parentElement !== host) {
+      if (!this.tooltip) {
+        this.tooltip = document.createElement('div')
+        this.tooltip.id = 'ci-tooltip'
+      }
+      host.appendChild(this.tooltip)
     }
     return this.tooltip
   }

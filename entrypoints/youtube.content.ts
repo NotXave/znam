@@ -279,10 +279,15 @@ export default defineContentScript({
         injecting = false
       }
 
+      // Re-paint every caption word (not only the newly-wrapped ones) so a
+      // container YouTube just rebuilt gets its colors back immediately.
+      const repaintAll = () => {
+        for (const s of cw.querySelectorAll<HTMLElement>('.ci-word')) paintSpan(s)
+      }
       const pending = [...new Set(
         spans.map(s => s.dataset.word || '').filter(w => w && !tokenInfo.has(w)),
       )]
-      for (const span of spans) paintSpan(span) // paint already-known tokens now
+      repaintAll()
       if (pending.length === 0) return
 
       const res: Record<string, TokenInfo> = await send({
@@ -293,26 +298,38 @@ export default defineContentScript({
         tokenInfo.set(t, info)
         if (!lemmaStatus.has(info.lemma)) lemmaStatus.set(info.lemma, { status: info.status, level: info.level })
       }
-      for (const span of spans) {
-        if (span.isConnected) paintSpan(span)
-      }
+      if (cw.isConnected) repaintAll()
+    }
+
+    function scheduleInject() {
+      if (injecting) return
+      if (injectTimer) clearTimeout(injectTimer)
+      injectTimer = setTimeout(injectCaptions, 40)
+    }
+
+    // Re-inject whenever captions change or fullscreen toggles. YouTube
+    // frequently REPLACES the caption container (and rebuilds it entirely on
+    // fullscreen), which orphaned an observer bound to that container — so we
+    // observe the persistent player element instead, and also re-paint on
+    // fullscreenchange. injectCaptions re-queries the container each time.
+    function onFullscreenChange() {
+      // The new fullscreen DOM/captions render a moment after the event
+      setTimeout(injectCaptions, 60)
+      setTimeout(injectCaptions, 400)
     }
 
     function startCaptionReader() {
       if (captionPoll || captionObserver) return
+      document.addEventListener('fullscreenchange', onFullscreenChange)
       captionPoll = setInterval(() => {
-        const cw = document.querySelector('.ytp-caption-window-container')
-        if (!cw) return
+        const player = document.querySelector('#movie-player, .html5-video-player')
+        if (!player) return
         clearInterval(captionPoll!)
         captionPoll = null
-        captionObserver = new MutationObserver(() => {
-          if (injecting) return
-          if (injectTimer) clearTimeout(injectTimer)
-          injectTimer = setTimeout(injectCaptions, 30)
-        })
-        captionObserver.observe(cw, { childList: true, subtree: true, characterData: true })
+        captionObserver = new MutationObserver(scheduleInject)
+        captionObserver.observe(player, { childList: true, subtree: true })
         injectCaptions()
-      }, 1000)
+      }, 500)
     }
 
     function stopCaptionReader() {
@@ -322,6 +339,7 @@ export default defineContentScript({
       }
       captionObserver?.disconnect()
       captionObserver = null
+      document.removeEventListener('fullscreenchange', onFullscreenChange)
     }
 
     // ── Pinned subtitle panel (Language-Reactor-style) ──────
