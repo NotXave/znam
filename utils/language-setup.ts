@@ -3,13 +3,11 @@ import {
   clearLanguageData,
   countFreqRows,
   countLemmaRows,
-  deleteWord,
   getAllWords,
   putFreqRows,
   putLemmaRows,
-  putWords,
 } from './db'
-import { invalidateLemmaCache, lemmatizeBatch } from './lemmatizer'
+import { invalidateLemmaCache } from './lemmatizer'
 
 // Language-data artifacts are built offline by scripts/build-lang-data.mjs.
 // pl/de/en ship inside the extension (public/data/); anything else is
@@ -148,35 +146,6 @@ async function installLanguageData(
   }
 
   invalidateLemmaCache(lang)
-
-  // Words tracked BEFORE the dictionary existed are keyed by surface form
-  // (e.g. "potrafią"); re-key them to their lemma so they match page tokens.
-  const moved = await relemmatizeWords(lang)
-  if (moved > 0) {
-    post({ type: 'PROGRESS', step: 'store', pct: 100, detail: `Migrated ${moved} words to their lemmas` })
-  }
-}
-
-export async function relemmatizeWords(lang: string): Promise<number> {
-  const words = await getAllWords(lang)
-  if (words.length === 0) return 0
-  const lemmaMap = await lemmatizeBatch(lang, words.map(w => w.lemma))
-  const existing = new Set(words.map(w => w.lemma))
-  const puts: typeof words = []
-  const dels: string[] = []
-  for (const w of words) {
-    const target = lemmaMap.get(w.lemma)
-    if (!target || target === w.lemma) continue
-    dels.push(w.lemma)
-    // If a record already exists under the lemma, keep it and drop this one
-    if (!existing.has(target)) {
-      puts.push({ ...w, lemma: target, updatedAt: Date.now() })
-      existing.add(target)
-    }
-  }
-  await putWords(puts)
-  for (const lemma of dels) await deleteWord(lang, lemma)
-  return dels.length
 }
 
 export function handleSetupPort(port: any, onInstalled?: (lang: string) => void): void {
