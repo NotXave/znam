@@ -26,7 +26,10 @@ const STYLE = `
   padding: 10px 14px; font: 600 13px/1 sans-serif; cursor: pointer;
   box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 }
-#ci-score-results:hover { background: #2d4a77; }
+#ci-score-results { display: inline-flex; align-items: center; gap: 8px; }
+#ci-score-results > span:first-child:hover { text-decoration: underline; }
+#ci-score-results .ci-src-close { color: #8a8aa0; font-size: 11px; padding: 0 2px; }
+#ci-score-results .ci-src-close:hover { color: #fff; }
 /* YouTube blocks text selection in captions — re-enable it so drag-select works */
 .ytp-caption-window-container, .ytp-caption-window-container * {
   user-select: text !important; -webkit-user-select: text !important; -moz-user-select: text !important;
@@ -964,10 +967,23 @@ export default defineContentScript({
         closeSubtitlePanel()
         activeCues = []
         stopCaptionReader()
-        // Any browse surface with thumbnails can be scored on demand
-        ensureScoreResultsButton()
+        // Only offer bulk scoring on search-results pages (not the home feed
+        // etc.), and let it be dismissed — the floating button was too
+        // intrusive everywhere. A new search shows it again.
+        document.getElementById('ci-score-results')?.remove()
+        if (location.pathname === '/results') {
+          const q = new URLSearchParams(location.search).get('search_query') || ''
+          if (q !== lastResultsQuery) {
+            lastResultsQuery = q
+            scoreResultsDismissed = false
+          }
+          if (!scoreResultsDismissed) ensureScoreResultsButton()
+        }
       }
     }
+
+    let scoreResultsDismissed = false
+    let lastResultsQuery = ''
 
     // ── Search results scoring ──────────────────────────────
 
@@ -975,8 +991,19 @@ export default defineContentScript({
       if (document.getElementById('ci-score-results')) return
       const btn = document.createElement('button')
       btn.id = 'ci-score-results'
-      btn.textContent = '% Score results'
-      btn.addEventListener('click', scoreSearchResults)
+      const label = document.createElement('span')
+      label.textContent = '% Score results'
+      label.addEventListener('click', scoreSearchResults)
+      const close = document.createElement('span')
+      close.className = 'ci-src-close'
+      close.textContent = '✕'
+      close.title = 'Hide (until next search)'
+      close.addEventListener('click', (e) => {
+        e.stopPropagation()
+        scoreResultsDismissed = true
+        btn.remove()
+      })
+      btn.append(label, close)
       document.body.appendChild(btn)
     }
 
