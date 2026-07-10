@@ -1,6 +1,6 @@
 import type { LearningLevel, Message, TokenInfo, WordRecord, WordStatus } from '../utils/types'
-import { translate, translateBatch } from '../utils/translate'
-import { translateDeepL } from '../utils/deepl'
+import { normalizeCase, translate, translateBatch } from '../utils/translate'
+import { translateBatchDeepL, translateDeepL } from '../utils/deepl'
 import { handleOcrPort } from '../utils/manga-ocr-bg'
 import { lookupWiktionary } from '../utils/dictionary'
 import { lookupReverso } from '../utils/reverso'
@@ -384,8 +384,14 @@ export default defineBackground(() => {
         }
 
         case 'TRANSLATE_BATCH': {
-          const { texts, from, to } = message.payload
-          return await translateBatch(texts, from, to)
+          const { from, to } = message.payload
+          // OCR text is often ALL CAPS — normalize for far better translations
+          const texts = (message.payload.texts as string[]).map(normalizeCase)
+          // Manga quality matters more than speed: DeepL first, Google fills gaps
+          const deepl = await translateBatchDeepL(texts, from, to)
+          if (deepl.every(t => t)) return deepl
+          const google = await translateBatch(texts, from, to)
+          return texts.map((_, i) => deepl[i] || google[i])
         }
 
         case 'REVERSO_LOOKUP': {

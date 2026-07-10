@@ -9,6 +9,20 @@ const CORS_PROXIES = [
 
 const translationCache = new Map<string, TranslationResult>()
 
+/**
+ * Manga/manhwa lettering is usually ALL CAPS; translators render that as
+ * shouting or mis-handle it. If a text is >=90% uppercase letters, lowercase
+ * it and re-capitalize sentence starts for a much cleaner translation.
+ */
+export function normalizeCase(text: string): string {
+  const letters = text.replace(/[^\p{L}]/gu, '')
+  if (!letters) return text
+  const upper = letters.replace(/[^\p{Lu}]/gu, '')
+  if (upper.length / letters.length < 0.9) return text
+  const lower = text.toLowerCase()
+  return lower.replace(/(^\s*|[.!?…]\s+)(\p{L})/gu, (_m, pre, ch) => pre + ch.toUpperCase())
+}
+
 function parseGoogleResponse(data: any): string {
   try {
     if (Array.isArray(data) && Array.isArray(data[0]) && data[0].length > 0) {
