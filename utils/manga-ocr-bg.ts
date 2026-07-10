@@ -1,5 +1,7 @@
 import type { OcrEvent, OcrRegion, OcrRequest } from './types'
 import { toTesseractLangs } from './ocr/langs'
+import { checkServerHealth, serverDetect, serverOcr } from './ocr/server-client'
+import { getSettings } from './settings'
 
 // Firefox MV2: the persistent background page hosts the Tesseract worker
 // directly. (Chrome MV3 would need an offscreen document — not wired here.)
@@ -77,6 +79,40 @@ async function annotateRegionColors(blob: Blob, regions: OcrRegion[]): Promise<v
   }
 }
 
+/**
+ * Hybrid tier: the server's comic-text-detector finds the speech bubbles
+ * (whole-page Tesseract segmentation is unreliable on busy manga/manhwa art),
+ * then Tesseract reads each cropped bubble — which it does well.
+ */
+async function hybridOcr(blob: Blob, lang: string, serverUrl: string): Promise<OcrRegion[]> {
+  const detected = await serverDetect(serverUrl, blob)
+  if (detected.length === 0) return []
+  const bmp = await createImageBitmap(blob)
+  const { recognizeCrop } = await import('./ocr/tesseract-host')
+  const out: OcrRegion[] = []
+  let seq = 0
+  try {
+    for (const det of detected) {
+      const pad = Math.round(Math.max(det.bbox.w, det.bbox.h) * 0.06) + 4
+      const x = Math.max(0, det.bbox.x - pad)
+      const y = Math.max(0, det.bbox.y - pad)
+      const w = Math.min(bmp.width - x, det.bbox.w + pad * 2)
+      const h = Math.min(bmp.height - y, det.bbox.h + pad * 2)
+      if (w < 8 || h < 8) continue
+      const canvas = new OffscreenCanvas(w, h)
+      canvas.getContext('2d')!.drawImage(bmp, x, y, w, h, 0, 0, w, h)
+      const cropBlob = await canvas.convertToBlob({ type: 'image/png' })
+      for (const region of await recognizeCrop(cropBlob, lang, x, y)) {
+        region.id = `r${seq++}`
+        out.push(region)
+      }
+    }
+  } finally {
+    bmp.close()
+  }
+  return out
+}
+
 export function handleOcrPort(port: any): void {
   const post = (event: OcrEvent) => {
     try { port.postMessage(event) } catch { /* port closed */ }
@@ -86,12 +122,19 @@ export function handleOcrPort(port: any): void {
     if (msg.type !== 'OCR_PAGE') return
 
     enqueueOcr(async () => {
+      // Tier selection: Japanese needs the server; latin scripts use the
+      // server's bubble detector + Tesseract when the server is up (much
+      // better on busy art), otherwise plain whole-page Tesseract.
       const tessLangs = toTesseractLangs(msg.lang)
-      if (!tessLangs) {
+      const settings = await getSettings()
+      const serverUp = await checkServerHealth(settings.mangaServerUrl)
+      if (!tessLangs && !serverUp) {
         post({ type: 'UNSUPPORTED', imageId: msg.imageId, lang: msg.lang })
         return
       }
-      const cacheKey = `${msg.url}|${msg.lang}`
+      const tier = !tessLangs ? 'server' : serverUp ? 'hybrid' : 'tesseract'
+
+      const cacheKey = `${msg.url}|${msg.lang}|${tier}`
       const cached = ocrCache.get(cacheKey)
       if (cached) {
         post({ type: 'REGIONS', imageId: msg.imageId, regions: cached })
@@ -101,11 +144,26 @@ export function handleOcrPort(port: any): void {
         const blob = msg.dataUrl
           ? await (await fetch(msg.dataUrl)).blob()
           : await fetchImageBlob(msg.url)
-        const { recognizePage } = await import('./ocr/tesseract-host')
-        const regions = await recognizePage(blob, msg.lang)
+
+        let regions: OcrRegion[]
+        if (tier === 'server') {
+          regions = await serverOcr(settings.mangaServerUrl, blob, msg.lang)
+        } else if (tier === 'hybrid') {
+          try {
+            regions = await hybridOcr(blob, msg.lang, settings.mangaServerUrl)
+          } catch (err) {
+            console.warn('[znam] hybrid OCR failed, falling back to plain Tesseract:', err)
+            const { recognizePage } = await import('./ocr/tesseract-host')
+            regions = await recognizePage(blob, msg.lang)
+          }
+        } else {
+          const { recognizePage } = await import('./ocr/tesseract-host')
+          regions = await recognizePage(blob, msg.lang)
+        }
+
         await annotateRegionColors(blob, regions)
         cacheOcr(cacheKey, regions)
-        console.log(`[znam] manga OCR: ${regions.length} region(s)`)
+        console.log(`[znam] manga OCR (${tier}): ${regions.length} region(s)`)
         post({ type: 'REGIONS', imageId: msg.imageId, regions })
       } catch (err: any) {
         console.error('[znam] manga OCR failed for', msg.url, err)

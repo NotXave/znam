@@ -43,6 +43,11 @@ const STYLE = `
 }
 #znam-manga-toggle:hover { background: #2d4a77; }
 #znam-manga-toggle.on { background: #2d6e3e; color: #d7f5df; }
+#znam-manga-banner {
+  position: fixed; left: 50%; transform: translateX(-50%); top: 12px; z-index: 2147483000;
+  max-width: 640px; background: #1a1a2e; color: #eee; border-radius: 10px;
+  padding: 10px 16px; font: 13px/1.5 sans-serif; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
 `
 
 function send(msg: Message): Promise<any> {
@@ -206,12 +211,30 @@ export default defineContentScript({
       document.querySelector(`.znam-manga-badge[data-for="${imageId}"]`)?.remove()
     }
 
+    let bannerShown = false
+    function showBanner(text: string) {
+      if (bannerShown) return
+      bannerShown = true
+      const b = document.createElement('div')
+      b.id = 'znam-manga-banner'
+      b.textContent = text
+      const x = document.createElement('span')
+      x.textContent = '  ✕'
+      x.style.cursor = 'pointer'
+      x.addEventListener('click', () => b.remove())
+      b.appendChild(x)
+      document.body.appendChild(b)
+    }
+
     async function onOcrEvent(event: OcrEvent) {
       clearBadge(event.imageId)
       const t = tracked.get(event.imageId)
       if (!t) return
       if (event.type === 'UNSUPPORTED') {
-        console.info(`[znam] manga: OCR language "${event.lang}" not supported (Japanese needs a server)`)
+        showBanner(
+          `znam: "${event.lang}" pages need the local OCR server. Start it from the ` +
+          `manga-translator project (server\\.venv\\Scripts\\python server.py), then reload.`,
+        )
         return
       }
       if (event.type === 'OCR_ERROR') { console.warn('[znam] manga OCR error', event.error); return }

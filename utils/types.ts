@@ -100,6 +100,8 @@ export interface Settings {
   mangaEnabled: boolean
   /** Manga source language to OCR ('auto' = English+Polish; Japanese needs a server). */
   mangaSource: string
+  /** Local OCR companion server (comic-text-detector bubble detection + Japanese). */
+  mangaServerUrl: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -114,6 +116,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shortsDualSubs: true,
   mangaEnabled: true,
   mangaSource: 'auto',
+  mangaServerUrl: 'http://127.0.0.1:8787',
 }
 
 // ── Lookup results (reused from manga-translator) ───────────
