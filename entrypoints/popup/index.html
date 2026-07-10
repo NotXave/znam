@@ -33,6 +33,20 @@
 
     <div id="lang-state" class="state"></div>
 
+    <div class="row">
+      <label for="manga-source">Manga OCR</label>
+      <select id="manga-source">
+        <option value="auto">Auto (EN+PL)</option>
+        <option value="en">English</option>
+        <option value="pl">Polish</option>
+      </select>
+    </div>
+    <p class="hint" style="margin:2px 0 8px;color:#888;font-size:11px">
+      On mangadex.org / weebcentral.com, OCRs pages and translates them into your
+      learning language — click words to look up & track them. Toggle per page
+      with the 📖 button.
+    </p>
+
     <button id="open-app">Open library &amp; words</button>
 
     <script type="module" src="./popup.ts"></script>

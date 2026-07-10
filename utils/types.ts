@@ -96,6 +96,10 @@ export interface Settings {
   shortsSpeed: number
   /** Show the native-language translation line under the shorts subtitle. */
   shortsDualSubs: boolean
+  /** Manga: OCR + translate pages into your target language on reader sites. */
+  mangaEnabled: boolean
+  /** Manga source language to OCR ('auto' = English+Polish; Japanese needs a server). */
+  mangaSource: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -108,6 +112,8 @@ export const DEFAULT_SETTINGS: Settings = {
   shortsLoop: false,
   shortsSpeed: 1,
   shortsDualSubs: true,
+  mangaEnabled: true,
+  mangaSource: 'auto',
 }
 
 // ── Lookup results (reused from manga-translator) ───────────
@@ -138,10 +144,43 @@ export interface SubtitleCue {
   text: string
 }
 
+// ── Manga OCR (ported from manga-translator) ────────────────
+
+/** Axis-aligned box in NATURAL image pixels. */
+export interface Box { x: number; y: number; w: number; h: number }
+export interface OcrWord { text: string; bbox: Box }
+export interface OcrLine { text: string; bbox: Box }
+export interface OcrRegion {
+  id: string
+  bbox: Box
+  text: string
+  words: OcrWord[]
+  lines: OcrLine[]
+  vertical?: boolean
+  source: 'tesseract' | 'server'
+  bgColor?: string
+}
+
+/** Port protocol: content → background. */
+export type OcrRequest = {
+  type: 'OCR_PAGE'
+  imageId: string
+  url: string
+  lang: string
+  dataUrl?: string
+}
+
+/** Port protocol: background → content. */
+export type OcrEvent =
+  | { type: 'REGIONS'; imageId: string; regions: OcrRegion[] }
+  | { type: 'OCR_ERROR'; imageId: string; error: string }
+  | { type: 'UNSUPPORTED'; imageId: string; lang: string }
+
 // ── Messaging ───────────────────────────────────────────────
 
 export type Message =
   | { type: 'TRANSLATE'; payload: { text: string; from: string; to: string } }
+  | { type: 'TRANSLATE_BATCH'; payload: { texts: string[]; from: string; to: string } }
   | { type: 'REVERSO_LOOKUP'; payload: { text: string; from: string; to: string } }
   | { type: 'DEEPL_LOOKUP'; payload: { text: string; from: string; to: string } }
   | { type: 'DICTIONARY_LOOKUP'; payload: { word: string; lang: string } }

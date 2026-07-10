@@ -100,6 +100,10 @@ async function init() {
     persistSettings({ primaryTranslation: primarySel.value as Settings['primaryTranslation'] }),
   )
 
+  const mangaSel = $<HTMLSelectElement>('manga-source')
+  mangaSel.value = settings.mangaSource
+  mangaSel.addEventListener('change', () => persistSettings({ mangaSource: mangaSel.value }))
+
   autoHost.addEventListener('change', async () => {
     if (!tab) return
     const current = await getSettings()

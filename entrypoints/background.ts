@@ -1,6 +1,7 @@
 import type { LearningLevel, Message, TokenInfo, WordRecord, WordStatus } from '../utils/types'
-import { translate } from '../utils/translate'
+import { translate, translateBatch } from '../utils/translate'
 import { translateDeepL } from '../utils/deepl'
+import { handleOcrPort } from '../utils/manga-ocr-bg'
 import { lookupWiktionary } from '../utils/dictionary'
 import { lookupReverso } from '../utils/reverso'
 import { getSettings } from '../utils/settings'
@@ -362,6 +363,8 @@ export default defineBackground(() => {
         statusMaps.delete(lang)
         statusLoads.delete(lang)
       })
+    } else if (port.name === 'ocr') {
+      handleOcrPort(port)
     }
   })
 
@@ -378,6 +381,11 @@ export default defineBackground(() => {
         case 'TRANSLATE': {
           const { text, from, to } = message.payload
           return await translate(text, from, to)
+        }
+
+        case 'TRANSLATE_BATCH': {
+          const { texts, from, to } = message.payload
+          return await translateBatch(texts, from, to)
         }
 
         case 'REVERSO_LOOKUP': {

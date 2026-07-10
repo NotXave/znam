@@ -4,7 +4,7 @@ export default defineConfig({
   suppressWarnings: { firefoxDataCollection: true },
   manifest: ({ browser }) => ({
     name: 'znam',
-    version: '0.1.11',
+    version: '0.2.0',
     description:
       'Comprehensible-input reader — tracks the words you know and scores any page by how much of it you understand',
     permissions: ['storage', 'downloads', 'tabs'],
@@ -16,6 +16,12 @@ export default defineConfig({
     action: {
       default_title: 'znam',
     },
+    ...(browser === 'chrome' && {
+      // Tesseract's WASM (manga OCR) needs this under MV3
+      content_security_policy: {
+        extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+      },
+    }),
     commands: {
       'toggle-reader': {
         suggested_key: { default: 'Alt+R' },
