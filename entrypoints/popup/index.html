@@ -49,6 +49,46 @@
       when it's up.
     </p>
 
+    <div class="row">
+      <label for="netflix-tier">Netflix transcription</label>
+      <select id="netflix-tier">
+        <option value="local">Local (in-browser)</option>
+        <option value="server">Local server</option>
+        <option value="cloud">Cloud (OpenAI)</option>
+      </select>
+    </div>
+    <div class="row" id="netflix-model-row">
+      <label for="netflix-model-size">Model size</label>
+      <select id="netflix-model-size">
+        <option value="tiny">Tiny (fastest)</option>
+        <option value="base">Base</option>
+        <option value="small">Small (best)</option>
+      </select>
+    </div>
+    <div class="row" id="netflix-server-row">
+      <label for="netflix-server-url">Server URL</label>
+      <input type="text" id="netflix-server-url" style="width:150px" />
+    </div>
+    <div class="row" id="netflix-cloud-row">
+      <label for="netflix-cloud-key">OpenAI API key</label>
+      <input type="password" id="netflix-cloud-key" style="width:150px" placeholder="sk-…" />
+    </div>
+    <div class="row">
+      <label for="netflix-mode">Netflix subtitles</label>
+      <select id="netflix-mode">
+        <option value="replace">Replace with znam's</option>
+        <option value="supplement">Show both</option>
+      </select>
+    </div>
+    <p class="hint" style="margin:2px 0 8px;color:#888;font-size:11px">
+      On a Netflix watch page, click <b>🎙️ Transcribe audio</b> and share this
+      tab's audio when prompted (Firefox requires this manual step every
+      session — znam can't skip it). znam then transcribes what's actually
+      said instead of trusting Netflix's own subtitles. <b>Cloud tier sends
+      captured audio to OpenAI</b> — likely against Netflix's terms of
+      service; your choice, znam doesn't block it.
+    </p>
+
     <button id="open-app">Open library &amp; words</button>
 
     <script type="module" src="./popup.ts"></script>

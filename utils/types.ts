@@ -48,7 +48,7 @@ export interface LibraryEntry {
   url: string
   title: string
   lang: string
-  kind: 'page' | 'youtube'
+  kind: 'page' | 'youtube' | 'netflix'
   /** YouTube channel / author name (for grouping and sorting). */
   channel?: string
   score: number
@@ -102,6 +102,16 @@ export interface Settings {
   mangaSource: string
   /** Local OCR companion server (comic-text-detector bubble detection + Japanese). */
   mangaServerUrl: string
+  /** Netflix: which engine transcribes the captured tab audio. */
+  netflixAsrTier: 'local' | 'server' | 'cloud'
+  /** Local (WASM Whisper) tier only — bigger = slower + more accurate. */
+  netflixModelSize: 'tiny' | 'base' | 'small'
+  /** Local ASR companion server (own port — manga's server uses 8787). */
+  netflixServerUrl: string
+  /** Cloud tier: user's own OpenAI API key. Sends captured audio to OpenAI. */
+  netflixCloudApiKey: string
+  /** Hide Netflix's own subtitles (replace) or show both for comparison. */
+  netflixSubtitleMode: 'replace' | 'supplement'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -117,6 +127,11 @@ export const DEFAULT_SETTINGS: Settings = {
   mangaEnabled: true,
   mangaSource: 'auto',
   mangaServerUrl: 'http://127.0.0.1:8787',
+  netflixAsrTier: 'local',
+  netflixModelSize: 'tiny',
+  netflixServerUrl: 'http://127.0.0.1:8788',
+  netflixCloudApiKey: '',
+  netflixSubtitleMode: 'replace',
 }
 
 // ── Lookup results (reused from manga-translator) ───────────
@@ -178,6 +193,31 @@ export type OcrEvent =
   | { type: 'REGIONS'; imageId: string; regions: OcrRegion[] }
   | { type: 'OCR_ERROR'; imageId: string; error: string }
   | { type: 'UNSUPPORTED'; imageId: string; lang: string }
+
+// ── Netflix audio transcription ─────────────────────────────
+
+/**
+ * Port 'asr': content → background. The port's lifecycle IS the session —
+ * connect() on first 🎙️ enable; ASR_STOP pauses without disconnecting, so a
+ * loaded local model survives pause/resume within one viewing session.
+ */
+export type AsrRequest =
+  | { type: 'ASR_START'; lang: string }
+  /** pcm = mono Float32 samples at 16kHz, as raw bytes. */
+  | { type: 'ASR_CHUNK'; seq: number; pcm: ArrayBuffer; startTime: number }
+  | { type: 'ASR_STOP' }
+
+/**
+ * Port 'asr': background → content. SEGMENT fires repeatedly as chunks are
+ * transcribed (streaming), not a single terminal result like OCR's REGIONS.
+ */
+export type AsrEvent =
+  | { type: 'PROGRESS'; step: 'download' | 'load'; pct: number; detail: string }
+  | { type: 'READY'; tier: 'local' | 'server' | 'cloud'; model?: string }
+  | { type: 'SEGMENT'; seq: number; cue: SubtitleCue }
+  /** fatal=false → e.g. "falling behind", non-blocking. */
+  | { type: 'ERROR'; error: string; fatal: boolean }
+  | { type: 'STOPPED' }
 
 // ── Messaging ───────────────────────────────────────────────
 

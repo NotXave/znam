@@ -45,7 +45,8 @@ interface Stats {
   daily: Record<string, number>
   totalWords: number
   youtube: { count: number; unlockAt: number; unlocked: boolean; estimate: number; watchedThisWeek: number }
-  library: { total: number; pages: number; videos: number; readThisWeek: number; sweetSpot: number; avgScore: number }
+  netflix: { count: number; unlockAt: number; unlocked: boolean; estimate: number; watchedThisWeek: number }
+  library: { total: number; pages: number; videos: number; netflixVideos: number; readThisWeek: number; sweetSpot: number; avgScore: number }
 }
 
 const LEVEL_COLORS = ['#c14b4b', '#c1774b', '#b8a12e', '#8fa32e', '#5d9e4a']
@@ -94,37 +95,47 @@ async function renderStats() {
     .map(d => `<div class="day" style="height:${Math.round((d.count / dayMax) * 100)}%" title="${d.date}: ${d.count} new"></div>`)
     .join('')
 
-  const yt = s.youtube
-  const ytEl = document.getElementById('stats-youtube')!
-  if (yt.unlocked) {
-    const pct = Math.round(yt.estimate * 100)
-    const label = difficultyLabel(yt.estimate)
-    ytEl.innerHTML = `
-      <div style="display:flex;align-items:center;gap:14px">
-        <span class="score-pill score-${label.replace(' ', '-').replace('sweet-spot', 'sweet')}" style="font-size:20px;min-width:70px">${pct}%</span>
-        <div>
-          <div>You understand roughly <b>${pct}%</b> of the ${LANGUAGES.find(([c]) => c === lang)?.[1] ?? lang} YouTube videos you watch — <span class="ci-label">${label}</span>.</div>
-          <div class="hint">Estimated live from ${yt.count.toLocaleString()} watched videos${yt.watchedThisWeek ? ` · ${yt.watchedThisWeek} this week` : ''}. Updates as your vocabulary grows.</div>
-        </div>
-      </div>`
-  } else {
-    const left = yt.unlockAt - yt.count
-    const pctBar = Math.round((yt.count / yt.unlockAt) * 100)
-    ytEl.innerHTML = `
-      <div>🔒 Watch <b>${left}</b> more ${lang} YouTube video${left === 1 ? '' : 's'} to unlock your comprehension estimate.</div>
-      <div class="bar-row" style="margin-top:8px">
-        <span class="bar-track"><span class="bar-fill" style="width:${pctBar}%;background:#2d4a77"></span></span>
-        <span class="bar-num">${yt.count}/${yt.unlockAt}</span>
-      </div>
-      <div class="hint">Open ${lang} videos or Shorts (with subtitles) — each one watched counts.</div>`
-  }
+  renderComprehensionCard('stats-youtube', s.youtube, 'YouTube videos you watch', 'Open videos or Shorts (with subtitles) — each one watched counts.')
+  renderComprehensionCard('stats-netflix', s.netflix, 'Netflix you watch (znam-transcribed)', 'Turn on 🎙️ Transcribe on a Netflix watch page — each session watched counts.')
 
   const lib = s.library
   document.getElementById('stats-reading')!.innerHTML = `
-    <div class="bar-row"><span class="bar-label">In library</span><span>${lib.total.toLocaleString()} items — ${lib.pages} pages, ${lib.videos} videos</span></div>
+    <div class="bar-row"><span class="bar-label">In library</span><span>${lib.total.toLocaleString()} items — ${lib.pages} pages, ${lib.videos} YouTube, ${lib.netflixVideos} Netflix</span></div>
     <div class="bar-row"><span class="bar-label">This week</span><span>${lib.readThisWeek} read</span></div>
     <div class="bar-row"><span class="bar-label">Sweet spot</span><span>${lib.sweetSpot} at 90–98% comprehensible</span></div>
   `
+}
+
+function renderComprehensionCard(
+  elId: string,
+  stat: { count: number; unlockAt: number; unlocked: boolean; estimate: number; watchedThisWeek: number },
+  subject: string,
+  unlockHint: string,
+) {
+  const el = document.getElementById(elId)
+  if (!el) return
+  if (stat.unlocked) {
+    const pct = Math.round(stat.estimate * 100)
+    const label = difficultyLabel(stat.estimate)
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:14px">
+        <span class="score-pill score-${label.replace(' ', '-').replace('sweet-spot', 'sweet')}" style="font-size:20px;min-width:70px">${pct}%</span>
+        <div>
+          <div>You understand roughly <b>${pct}%</b> of the ${LANGUAGES.find(([c]) => c === lang)?.[1] ?? lang} ${subject} — <span class="ci-label">${label}</span>.</div>
+          <div class="hint">Estimated live from ${stat.count.toLocaleString()} watched${stat.watchedThisWeek ? ` · ${stat.watchedThisWeek} this week` : ''}. Updates as your vocabulary grows.</div>
+        </div>
+      </div>`
+  } else {
+    const left = stat.unlockAt - stat.count
+    const pctBar = Math.round((stat.count / stat.unlockAt) * 100)
+    el.innerHTML = `
+      <div>🔒 Watch <b>${left}</b> more to unlock your comprehension estimate.</div>
+      <div class="bar-row" style="margin-top:8px">
+        <span class="bar-track"><span class="bar-fill" style="width:${pctBar}%;background:#2d4a77"></span></span>
+        <span class="bar-num">${stat.count}/${stat.unlockAt}</span>
+      </div>
+      <div class="hint">${unlockHint}</div>`
+  }
 }
 
 function switchTab(name: string) {

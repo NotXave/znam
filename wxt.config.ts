@@ -16,6 +16,14 @@ export default defineConfig({
     action: {
       default_title: 'znam',
     },
+    web_accessible_resources: [
+      // pcm-worklet.js: loaded via audioWorklet.addModule() from the Netflix
+      // page context. transformers.web.min.js: dynamically imported by the
+      // background page (kept out of the bundled background.js — see
+      // utils/asr/whisper-local.ts for why).
+      { resources: ['asr/pcm-worklet.js'], matches: ['*://www.netflix.com/*'] },
+      { resources: ['asr/transformers.web.min.js'], matches: ['*://*/*'] },
+    ],
     ...(browser === 'chrome' && {
       // Tesseract's WASM (manga OCR) needs this under MV3
       content_security_policy: {

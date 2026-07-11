@@ -104,6 +104,37 @@ async function init() {
   mangaSel.value = settings.mangaSource
   mangaSel.addEventListener('change', () => persistSettings({ mangaSource: mangaSel.value }))
 
+  const nfTierSel = $<HTMLSelectElement>('netflix-tier')
+  const nfModelSel = $<HTMLSelectElement>('netflix-model-size')
+  const nfServerInput = $<HTMLInputElement>('netflix-server-url')
+  const nfCloudInput = $<HTMLInputElement>('netflix-cloud-key')
+  const nfModeSel = $<HTMLSelectElement>('netflix-mode')
+  nfTierSel.value = settings.netflixAsrTier
+  nfModelSel.value = settings.netflixModelSize
+  nfServerInput.value = settings.netflixServerUrl
+  nfCloudInput.value = settings.netflixCloudApiKey
+  nfModeSel.value = settings.netflixSubtitleMode
+
+  function syncNetflixTierRows() {
+    $('netflix-model-row').hidden = nfTierSel.value !== 'local'
+    $('netflix-server-row').hidden = nfTierSel.value !== 'server'
+    $('netflix-cloud-row').hidden = nfTierSel.value !== 'cloud'
+  }
+  syncNetflixTierRows()
+
+  nfTierSel.addEventListener('change', () => {
+    syncNetflixTierRows()
+    persistSettings({ netflixAsrTier: nfTierSel.value as Settings['netflixAsrTier'] })
+  })
+  nfModelSel.addEventListener('change', () =>
+    persistSettings({ netflixModelSize: nfModelSel.value as Settings['netflixModelSize'] }),
+  )
+  nfServerInput.addEventListener('change', () => persistSettings({ netflixServerUrl: nfServerInput.value.trim() }))
+  nfCloudInput.addEventListener('change', () => persistSettings({ netflixCloudApiKey: nfCloudInput.value.trim() }))
+  nfModeSel.addEventListener('change', () =>
+    persistSettings({ netflixSubtitleMode: nfModeSel.value as Settings['netflixSubtitleMode'] }),
+  )
+
   autoHost.addEventListener('change', async () => {
     if (!tab) return
     const current = await getSettings()

@@ -2,6 +2,7 @@ import type { LearningLevel, Message, TokenInfo, WordRecord, WordStatus } from '
 import { normalizeCase, translate, translateBatch } from '../utils/translate'
 import { translateBatchDeepL, translateDeepL } from '../utils/deepl'
 import { handleOcrPort } from '../utils/manga-ocr-bg'
+import { handleAsrPort } from '../utils/asr-bg'
 import { lookupWiktionary } from '../utils/dictionary'
 import { lookupReverso } from '../utils/reverso'
 import { getSettings } from '../utils/settings'
@@ -171,6 +172,26 @@ async function computeStats(lang: string) {
     watchedThisWeek: ytEntries.filter(e => now - e.updatedAt < 7 * DAY).length,
   }
 
+  // Netflix comprehension estimate — kept separate from YouTube's: this one
+  // is built from znam's own, admittedly-imperfect local transcription
+  // rather than officially-authored captions, a different confidence tier.
+  const nfEntries = library.filter(e => e.kind === 'netflix')
+  let nfWeighted = 0
+  let nfTokens = 0
+  for (const e of nfEntries) {
+    const r = rescoreLemmaCounts(e.lemmaCounts || {}, l => statusMap.get(l))
+    nfWeighted += r.score * r.countableTokens
+    nfTokens += r.countableTokens
+  }
+  const NF_UNLOCK = 5
+  const netflix = {
+    count: nfEntries.length,
+    unlockAt: NF_UNLOCK,
+    unlocked: nfEntries.length >= NF_UNLOCK,
+    estimate: nfTokens > 0 ? nfWeighted / nfTokens : 0,
+    watchedThisWeek: nfEntries.filter(e => now - e.updatedAt < 7 * DAY).length,
+  }
+
   return {
     counts,
     levels,
@@ -178,10 +199,12 @@ async function computeStats(lang: string) {
     daily,
     totalWords: words.length,
     youtube,
+    netflix,
     library: {
       total: library.length,
       pages: library.filter(e => e.kind === 'page').length,
       videos: ytEntries.length,
+      netflixVideos: nfEntries.length,
       readThisWeek: readThisWeek.length,
       sweetSpot,
       avgScore,
@@ -365,6 +388,8 @@ export default defineBackground(() => {
       })
     } else if (port.name === 'ocr') {
       handleOcrPort(port)
+    } else if (port.name === 'asr') {
+      handleAsrPort(port)
     }
   })
 
