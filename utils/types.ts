@@ -112,6 +112,9 @@ export interface Settings {
   netflixCloudApiKey: string
   /** Hide Netflix's own subtitles (replace) or show both for comparison. */
   netflixSubtitleMode: 'replace' | 'supplement'
+  /** Audio input device to capture (a virtual cable — Firefox's getDisplayMedia
+   *  ignores audio entirely, see utils/asr/audio-capture.ts). '' = default mic. */
+  netflixAudioDeviceId: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -132,6 +135,7 @@ export const DEFAULT_SETTINGS: Settings = {
   netflixServerUrl: 'http://127.0.0.1:8788',
   netflixCloudApiKey: '',
   netflixSubtitleMode: 'replace',
+  netflixAudioDeviceId: '',
 }
 
 // ── Lookup results (reused from manga-translator) ───────────

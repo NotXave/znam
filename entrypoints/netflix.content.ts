@@ -11,9 +11,10 @@ import type {
 } from '../utils/types'
 import { ReaderTooltip, type WordStatusApi } from '../shared/tooltip'
 import { collectTextNodes, wrapTextNode } from '../shared/word-wrapper'
-import { AudioCapture, type CaptureStartResult } from '../utils/asr/audio-capture'
+import { AudioCapture, listAudioInputDevices, type CaptureStartResult } from '../utils/asr/audio-capture'
 import { scoreTokens } from '../utils/scoring'
 import { tokenize } from '../utils/tokenizer'
+import { saveSettings } from '../utils/settings'
 
 // Reuses the exact #ci-sub-panel styling/markup from youtube.content.ts —
 // copied, not shared, matching this codebase's per-content-script
@@ -60,6 +61,25 @@ const STYLE = `
   background: #1a1a2e; color: #cfe3ff; border-radius: 10px;
   padding: 8px 12px; font: 12px/1.4 sans-serif; max-width: 320px;
 }
+#znam-nf-devices {
+  position: fixed; left: 16px; bottom: 64px; z-index: 2147483001;
+  background: #1a1a2e; color: #eee; border-radius: 12px;
+  padding: 14px 16px; font: 13px/1.5 "Roboto", sans-serif; max-width: 360px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+#znam-nf-devices .znam-nf-devices-title { font-weight: 600; margin-bottom: 6px; }
+#znam-nf-devices .znam-nf-devices-hint { color: #999; font-size: 11px; margin-bottom: 10px; }
+#znam-nf-devices select {
+  width: 100%; background: #242440; color: #eee; border: 1px solid #333;
+  border-radius: 6px; padding: 5px 8px; margin-bottom: 10px;
+}
+#znam-nf-devices .znam-nf-devices-buttons { display: flex; gap: 8px; }
+#znam-nf-devices button {
+  background: #242440; color: #cfe3ff; border: 0; border-radius: 6px;
+  padding: 6px 12px; font-size: 12px; cursor: pointer;
+}
+#znam-nf-devices .znam-nf-device-use { background: #2d6e3e; }
+#znam-nf-devices button:hover { filter: brightness(1.2); }
 .znam-nf-replace .player-timedtext { visibility: hidden !important; }
 `
 
@@ -351,6 +371,11 @@ export default defineContentScript({
     }
 
     // ── Audio capture + ASR port ────────────────────────────
+    // Firefox's getDisplayMedia() ignores audio entirely (confirmed browser
+    // limitation, not fixable here — see utils/asr/audio-capture.ts), so
+    // capture goes through getUserMedia() against a virtual audio cable
+    // (e.g. VB-Audio Virtual Cable on Windows) that the user routes their
+    // Netflix/browser audio output into. znam doesn't install this for you.
 
     const capture = new AudioCapture()
     let asrPort: ReturnType<typeof browser.runtime.connect> | null = null
@@ -359,12 +384,15 @@ export default defineContentScript({
 
     const badge = document.createElement('div')
     badge.id = 'znam-nf-badge'
+    badge.title = 'Right-click to change the audio input device'
     badge.innerHTML = `🎙️ Transcribe audio<span class="znam-nf-sub"></span>`
     document.body.appendChild(badge)
 
     const progressEl = document.createElement('div')
     progressEl.id = 'znam-nf-progress'
     progressEl.hidden = true
+
+    let devicePanel: HTMLElement | null = null
 
     function setBadgeSub(text: string) {
       const el = badge.querySelector('.znam-nf-sub') as HTMLElement
@@ -400,8 +428,9 @@ export default defineContentScript({
       }
     }
 
-    async function startTranscribing() {
+    async function startCaptureWith(deviceId: string) {
       const result: CaptureStartResult = await capture.start(
+        deviceId,
         (pcm, startTime) => {
           // Always a plain ArrayBuffer here — pcm comes from a fresh
           // Float32Array (see AudioCapture.emitWindow), never SharedArrayBuffer.
@@ -412,11 +441,12 @@ export default defineContentScript({
         () => video()?.currentTime ?? 0,
       )
       if (result === 'denied') {
-        setBadgeSub('you cancelled the share dialog')
+        setBadgeSub('microphone permission denied')
         return
       }
-      if (result === 'no-audio') {
-        setBadgeSub('no audio shared — check "Share tab audio" next time')
+      if (result === 'no-device') {
+        setBadgeSub('that device has no audio — pick another')
+        openDevicePicker()
         return
       }
       if (result === 'error') {
@@ -443,9 +473,72 @@ export default defineContentScript({
       }
     }
 
+    async function openDevicePicker() {
+      devicePanel?.remove()
+      const panel = document.createElement('div')
+      panel.id = 'znam-nf-devices'
+      panel.innerHTML = `
+        <div class="znam-nf-devices-title">Which input is your virtual audio cable?</div>
+        <div class="znam-nf-devices-hint">
+          znam captures audio via a normal microphone input, not the browser's
+          tab-share dialog — Firefox doesn't support sharing tab audio at all
+          (a confirmed Mozilla limitation). Install a free virtual audio cable
+          (e.g. "VB-Audio Virtual Cable" for Windows — znam does not install
+          this for you), set your system/browser audio output to it, then
+          pick that cable's output below as the input znam listens to.
+        </div>
+        <select class="znam-nf-device-select"><option>Loading devices…</option></select>
+        <div class="znam-nf-devices-buttons">
+          <button class="znam-nf-device-use">Use this device</button>
+          <button class="znam-nf-device-cancel">Cancel</button>
+        </div>`
+      document.body.appendChild(panel)
+      devicePanel = panel
+
+      const select = panel.querySelector('.znam-nf-device-select') as HTMLSelectElement
+      const devices = await listAudioInputDevices()
+      select.innerHTML = ''
+      if (devices.length === 0) {
+        const opt = document.createElement('option')
+        opt.textContent = 'No audio input devices found'
+        select.appendChild(opt)
+      } else {
+        for (const d of devices) {
+          const opt = document.createElement('option')
+          opt.value = d.deviceId
+          opt.textContent = d.label || `Microphone (${d.deviceId.slice(0, 8)})`
+          select.appendChild(opt)
+        }
+        // Best-effort: preselect anything that looks like a virtual cable
+        const guess = devices.find((d) => /cable|virtual|stereo mix|voicemeeter/i.test(d.label))
+        if (guess) select.value = guess.deviceId
+        else if (settings.netflixAudioDeviceId) select.value = settings.netflixAudioDeviceId
+      }
+
+      panel.querySelector('.znam-nf-device-cancel')!.addEventListener('click', () => panel.remove())
+      panel.querySelector('.znam-nf-device-use')!.addEventListener('click', async () => {
+        const deviceId = select.value
+        if (!deviceId) return
+        settings = await persistSettings({ netflixAudioDeviceId: deviceId })
+        panel.remove()
+        startCaptureWith(deviceId)
+      })
+    }
+
+    async function persistSettings(patch: Partial<Settings>): Promise<Settings> {
+      const next = { ...settings, ...patch }
+      await saveSettings(next)
+      return next
+    }
+
     badge.addEventListener('click', () => {
-      if (transcribing) stopTranscribing()
-      else startTranscribing()
+      if (transcribing) { stopTranscribing(); return }
+      if (settings.netflixAudioDeviceId) startCaptureWith(settings.netflixAudioDeviceId)
+      else openDevicePicker()
+    })
+    badge.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      openDevicePicker()
     })
 
     // ── Navigation (Netflix is a pushState SPA; poll the URL) ──

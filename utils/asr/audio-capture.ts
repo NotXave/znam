@@ -1,16 +1,40 @@
-// Captures Netflix's actual audio output (not the DRM-protected <video>
-// stream, which captureStream() cannot touch) via getDisplayMedia — the
-// browser's tab-share picker, requiring a real per-session user gesture.
-// Slices the resulting PCM into overlapping windows for the ASR pipeline.
+// Captures Netflix's actual audio output — NOT via getDisplayMedia. Firefox
+// implements that API for video only and silently drops the audio track no
+// matter what you share (tab/window/screen); this is a confirmed, long-
+// standing Mozilla limitation (bugzilla.mozilla.org/show_bug.cgi?id=1541425),
+// not something this extension can work around at the API level.
+//
+// Instead: the user routes their system/browser audio output into a virtual
+// audio cable (e.g. VB-Audio Virtual Cable on Windows — free, install it
+// yourself, znam does not and cannot install it for you), and znam captures
+// that cable's OUTPUT as a normal microphone input via getUserMedia(), which
+// Firefox supports perfectly well (this is just standard mic capture, not
+// screen/tab sharing). One-time setup, no per-session share dialog — once
+// mic permission is granted for netflix.com it persists.
 
 export type ChunkHandler = (pcm: Float32Array, startTime: number) => void
-export type CaptureStartResult = 'ok' | 'denied' | 'no-audio' | 'error'
+export type CaptureStartResult = 'ok' | 'denied' | 'no-device' | 'error'
 
 const SAMPLE_RATE = 16000
 const WINDOW_SEC = 8
 const HOP_SEC = 6
 const WINDOW_SAMPLES = WINDOW_SEC * SAMPLE_RATE
 const HOP_SAMPLES = HOP_SEC * SAMPLE_RATE
+
+/** Requests mic permission (if not already granted) and lists input devices
+ *  with real labels. Labels are empty strings before permission is granted —
+ *  callers should call this once interactively before showing a picker. */
+export async function listAudioInputDevices(): Promise<MediaDeviceInfo[]> {
+  try {
+    const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
+    probe.getTracks().forEach((t) => t.stop())
+  } catch {
+    // Permission denied or no device — enumerateDevices() below still works,
+    // just without labels; the caller's UI should surface the denial itself.
+  }
+  const devices = await navigator.mediaDevices.enumerateDevices()
+  return devices.filter((d) => d.kind === 'audioinput')
+}
 
 export class AudioCapture {
   private stream: MediaStream | null = null
@@ -28,27 +52,27 @@ export class AudioCapture {
     return this.stream != null
   }
 
-  async start(onChunk: ChunkHandler, getVideoTime: () => number): Promise<CaptureStartResult> {
+  async start(deviceId: string, onChunk: ChunkHandler, getVideoTime: () => number): Promise<CaptureStartResult> {
     if (this.active) return 'ok'
     this.onChunk = onChunk
     this.getVideoTime = getVideoTime
 
     let stream: MediaStream
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+        video: false,
+      })
     } catch (err: any) {
       if (err?.name === 'NotAllowedError') return 'denied'
-      console.error('[znam] getDisplayMedia failed:', err)
+      if (err?.name === 'NotFoundError' || err?.name === 'OverconstrainedError') return 'no-device'
+      console.error('[znam] getUserMedia failed:', err)
       return 'error'
     }
 
-    // Video is only requested because Firefox otherwise won't offer a "Share
-    // tab audio" checkbox — discard it immediately, only audio is needed.
-    for (const track of stream.getVideoTracks()) track.stop()
-
     if (stream.getAudioTracks().length === 0) {
-      for (const track of stream.getTracks()) track.stop()
-      return 'no-audio'
+      stream.getTracks().forEach((t) => t.stop())
+      return 'no-device'
     }
 
     this.stream = stream
@@ -107,14 +131,13 @@ export class AudioCapture {
     this.windowStartVideoTime = this.getVideoTime() - this.bufferedSamples / SAMPLE_RATE
   }
 
-  /** Tears down the audio graph and stops every track — required for
-   *  Firefox's "this tab is being shared" indicator to clear. */
+  /** Tears down the audio graph and stops every track. */
   stop(): void {
     try { this.workletNode?.port.close() } catch {}
     this.workletNode?.disconnect()
     this.sourceNode?.disconnect()
     this.audioContext?.close().catch(() => {})
-    this.stream?.getTracks().forEach(t => t.stop())
+    this.stream?.getTracks().forEach((t) => t.stop())
     this.workletNode = null
     this.sourceNode = null
     this.audioContext = null
