@@ -4,7 +4,7 @@ export default defineConfig({
   suppressWarnings: { firefoxDataCollection: true },
   manifest: ({ browser }) => ({
     name: 'znam',
-    version: '0.3.2',
+    version: '0.3.3',
     description:
       'Comprehensible-input reader — tracks the words you know and scores any page by how much of it you understand',
     permissions: ['storage', 'downloads', 'tabs'],
@@ -18,11 +18,11 @@ export default defineConfig({
     },
     web_accessible_resources: [
       // pcm-worklet.js: loaded via audioWorklet.addModule() from the Netflix
-      // page context. transformers.web.min.js: dynamically imported by the
-      // background page (kept out of the bundled background.js — see
-      // utils/asr/whisper-local.ts for why).
+      // page context. transformers.bundle.js + the ONNX runtime under asr/ort/:
+      // dynamically imported by the background page (kept out of the bundled
+      // background.js — see utils/asr/whisper-local.ts for why).
       { resources: ['asr/pcm-worklet.js'], matches: ['*://www.netflix.com/*'] },
-      { resources: ['asr/transformers.web.min.js'], matches: ['*://*/*'] },
+      { resources: ['asr/transformers.bundle.js', 'asr/ort/*'], matches: ['*://*/*'] },
     ],
     ...(browser === 'chrome' && {
       // Tesseract's WASM (manga OCR) needs this under MV3

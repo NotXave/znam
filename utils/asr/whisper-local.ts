@@ -30,7 +30,13 @@ let modPromise: Promise<TransformersModule> | null = null
 
 async function loadTransformers(): Promise<TransformersModule> {
   if (!modPromise) {
-    const url = browser.runtime.getURL('/asr/transformers.web.min.js' as any)
+    // Self-contained bundle built with esbuild (see scripts/build-transformers,
+    // or the committed public/asr/transformers.bundle.js). Unlike the raw
+    // dist/transformers.web.min.js this resolves onnxruntime-web's bare module
+    // specifiers at build time — the raw file did `import('onnxruntime-web/
+    // webgpu')` at runtime, which a browser without an import map rejects
+    // ("bare specifier … was not remapped"), the exact error users hit.
+    const url = browser.runtime.getURL('/asr/transformers.bundle.js' as any)
     modPromise = import(/* @vite-ignore */ url) as Promise<TransformersModule>
   }
   return modPromise
@@ -67,6 +73,17 @@ export async function loadModel(
   loadPromise = loadTransformers().then(({ pipeline, env }) => {
     env.allowLocalModels = false
     env.useBrowserCache = true
+    // The ONNX WASM runtime is served from the packaged extension, not a CDN:
+    // a Firefox MV2 extension's `script-src 'self'` CSP blocks importing the
+    // loader .mjs from jsdelivr (transformers.js's default wasmPaths). Point
+    // it at the local copy and force single-threaded — threaded WASM needs
+    // SharedArrayBuffer/COOP-COEP we don't have.
+    const wasm = env.backends?.onnx?.wasm
+    if (wasm) {
+      wasm.wasmPaths = browser.runtime.getURL('/asr/ort/' as any)
+      wasm.numThreads = 1
+      wasm.proxy = false
+    }
     return pipeline('automatic-speech-recognition', modelId, {
       progress_callback: (p: any) => {
         if (p.status === 'progress' && typeof p.progress === 'number') {

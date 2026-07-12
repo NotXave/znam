@@ -1,11 +1,12 @@
 {
   "name": "znam",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wxt -b firefox",
     "dev:chrome": "wxt",
+    "build:transformers": "esbuild node_modules/@huggingface/transformers/dist/transformers.web.js --bundle --format=esm --platform=browser --minify --legal-comments=none --outfile=public/asr/transformers.bundle.js",
     "build": "wxt build -b firefox",
     "build:chrome": "wxt build",
     "zip": "wxt zip -b firefox",
