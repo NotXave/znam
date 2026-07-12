@@ -16,6 +16,24 @@ export type ChunkHandler = (pcm: Float32Array, startTime: number) => void
 export type CaptureStartResult = 'ok' | 'denied' | 'no-device' | 'error'
 
 const SAMPLE_RATE = 16000
+
+/** Linear-interpolation resample of one mono frame from `inRate` to `outRate`.
+ *  Only used on the native-rate fallback path (Firefox refused a 16kHz
+ *  AudioContext); good enough for speech recognition. */
+function downsample(frame: Float32Array, inRate: number, outRate: number): Float32Array {
+  const ratio = inRate / outRate
+  const outLen = Math.floor(frame.length / ratio)
+  const out = new Float32Array(outLen)
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * ratio
+    const i0 = Math.floor(pos)
+    const i1 = Math.min(i0 + 1, frame.length - 1)
+    const frac = pos - i0
+    out[i] = frame[i0] * (1 - frac) + frame[i1] * frac
+  }
+  return out
+}
+
 const WINDOW_SEC = 8
 const HOP_SEC = 6
 const WINDOW_SAMPLES = WINDOW_SEC * SAMPLE_RATE
@@ -47,6 +65,10 @@ export class AudioCapture {
   private windowStartVideoTime = 0
   private getVideoTime: () => number = () => 0
   private onChunk: ChunkHandler = () => {}
+  // Rate the AudioContext actually runs at — 16kHz on success, or the
+  // hardware-native rate (usually 48kHz) if Firefox rejected the 16kHz
+  // request, in which case onFrame downsamples to 16kHz itself.
+  private contextRate = SAMPLE_RATE
 
   get active(): boolean {
     return this.stream != null
@@ -59,27 +81,48 @@ export class AudioCapture {
 
     let stream: MediaStream
     try {
+      console.log('[znam ASR] getUserMedia deviceId=', deviceId || '(default)')
       stream = await navigator.mediaDevices.getUserMedia({
         audio: deviceId ? { deviceId: { exact: deviceId } } : true,
         video: false,
       })
     } catch (err: any) {
+      console.error('[znam ASR] getUserMedia failed:', err?.name, err)
       if (err?.name === 'NotAllowedError') return 'denied'
       if (err?.name === 'NotFoundError' || err?.name === 'OverconstrainedError') return 'no-device'
-      console.error('[znam] getUserMedia failed:', err)
       return 'error'
     }
 
     if (stream.getAudioTracks().length === 0) {
       stream.getTracks().forEach((t) => t.stop())
+      console.error('[znam ASR] stream has no audio tracks')
       return 'no-device'
     }
 
     this.stream = stream
     stream.getAudioTracks()[0].addEventListener('ended', () => this.stop())
 
+    // AudioContext at an arbitrary 16kHz was the shakiest, never-verified step
+    // in Firefox. If the browser refuses that rate, fall back to the native
+    // rate and downsample each frame to 16kHz in onFrame.
+    let audioContext: AudioContext
     try {
-      const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE })
+      audioContext = new AudioContext({ sampleRate: SAMPLE_RATE })
+      console.log('[znam ASR] AudioContext sampleRate=', audioContext.sampleRate)
+    } catch (err) {
+      console.warn('[znam ASR] AudioContext(16k) rejected, retrying at native rate:', err)
+      try {
+        audioContext = new AudioContext()
+        console.log('[znam ASR] fallback AudioContext sampleRate=', audioContext.sampleRate)
+      } catch (err2) {
+        console.error('[znam ASR] AudioContext creation failed entirely:', err2)
+        this.stop()
+        return 'error'
+      }
+    }
+    this.contextRate = audioContext.sampleRate
+
+    try {
       // WXT's typed PublicPath only lists known files, not this dynamic path
       await audioContext.audioWorklet.addModule(browser.runtime.getURL('/asr/pcm-worklet.js' as any))
       const source = audioContext.createMediaStreamSource(stream)
@@ -96,15 +139,19 @@ export class AudioCapture {
       this.buffer = []
       this.bufferedSamples = 0
       this.windowStartVideoTime = getVideoTime()
+      console.log('[znam ASR] capture graph ready @', this.contextRate, 'Hz')
       return 'ok'
     } catch (err) {
-      console.error('[znam] audio graph setup failed:', err)
+      console.error('[znam ASR] audio graph setup failed:', err)
       this.stop()
       return 'error'
     }
   }
 
   private onFrame(frame: Float32Array): void {
+    // Downsample to 16kHz if the context is running at the native rate.
+    // Cheap linear decimation is plenty for speech ASR.
+    if (this.contextRate !== SAMPLE_RATE) frame = downsample(frame, this.contextRate, SAMPLE_RATE)
     this.buffer.push(frame)
     this.bufferedSamples += frame.length
     while (this.bufferedSamples >= WINDOW_SAMPLES) this.emitWindow()

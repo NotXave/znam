@@ -407,11 +407,18 @@ export default defineContentScript({
       return asrPort
     }
 
+    function showBanner(text: string, isError: boolean) {
+      progressEl.hidden = false
+      progressEl.textContent = text
+      progressEl.style.background = isError ? '#5a1a1a' : '#1a1a2e'
+      progressEl.style.color = isError ? '#ffd7d7' : '#cfe3ff'
+      if (!progressEl.isConnected) document.body.appendChild(progressEl)
+    }
+
     function onAsrEvent(event: AsrEvent) {
+      console.log('[znam ASR] event', event.type, event)
       if (event.type === 'PROGRESS') {
-        progressEl.hidden = false
-        progressEl.textContent = `${event.step === 'download' ? 'Downloading model' : 'Loading model'}… ${event.pct}% (${event.detail})`
-        if (!progressEl.isConnected) document.body.appendChild(progressEl)
+        showBanner(`${event.step === 'download' ? 'Downloading model' : 'Loading model'}… ${event.pct}% (${event.detail})`, false)
       } else if (event.type === 'READY') {
         progressEl.hidden = true
         setBadgeSub(`transcribing (${event.tier}${event.model ? ' · ' + event.model : ''})`)
@@ -422,6 +429,7 @@ export default defineContentScript({
       } else if (event.type === 'ERROR') {
         console.warn('[znam] ASR:', event.error)
         setBadgeSub(event.fatal ? `error: ${event.error}` : `⚠ ${event.error}`)
+        showBanner((event.fatal ? '❌ ' : '⚠ ') + event.error, true)
         if (event.fatal) stopTranscribing()
       } else if (event.type === 'STOPPED') {
         setBadgeSub('')
@@ -440,17 +448,18 @@ export default defineContentScript({
         },
         () => video()?.currentTime ?? 0,
       )
+      console.log('[znam ASR] capture.start result=', result)
       if (result === 'denied') {
-        setBadgeSub('microphone permission denied')
+        showBanner('❌ Microphone permission denied for netflix.com — allow it in the address-bar 🎤 icon, then retry.', true)
         return
       }
       if (result === 'no-device') {
-        setBadgeSub('that device has no audio — pick another')
+        showBanner('❌ That input has no audio — pick another device.', true)
         openDevicePicker()
         return
       }
       if (result === 'error') {
-        setBadgeSub('capture failed — see console')
+        showBanner('❌ Audio capture failed to initialise — see the page console ([znam ASR] lines).', true)
         return
       }
       transcribing = true
@@ -532,6 +541,7 @@ export default defineContentScript({
     }
 
     badge.addEventListener('click', () => {
+      console.log('[znam ASR] badge click; transcribing=', transcribing, 'savedDevice=', settings.netflixAudioDeviceId || '(none)')
       if (transcribing) { stopTranscribing(); return }
       if (settings.netflixAudioDeviceId) startCaptureWith(settings.netflixAudioDeviceId)
       else openDevicePicker()
