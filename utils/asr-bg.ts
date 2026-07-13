@@ -45,20 +45,29 @@ export function handleAsrPort(port: any): void {
       return cloudTranscribe(cloudApiKey, pcm, lang)
     }
     if (tier === 'server') {
+      // Health-gated per chunk (10s cache in checkServerHealth), never a
+      // permanent downgrade: if the user starts the companion server
+      // mid-session, the very next chunk picks it up again.
       try {
-        return await serverTranscribe(serverUrl, pcm, lang)
+        if (!(await checkServerHealth(serverUrl))) throw new Error('health check failed')
+        const segments = await serverTranscribe(serverUrl, pcm, lang)
+        serverFallbackWarned = false
+        return segments
       } catch (err) {
         console.warn('[znam] ASR server request failed, falling back to local:', err)
         if (!serverFallbackWarned) {
           serverFallbackWarned = true
           post({
             type: 'ERROR',
-            error: `ASR server not reachable at ${serverUrl} — falling back to local (slower) transcription.`,
+            error: `ASR server not reachable at ${serverUrl} — using slow local fallback (tiny) until it's back.`,
             fatal: false,
           })
         }
+        // Emergency fallback always uses tiny: browser-wasm inference with the
+        // user's configured size (e.g. small) is far slower than real-time
+        // and just floods the session with backlog drops.
         const { transcribe } = await localEngine()
-        return transcribe(modelSize, lang, pcm, (pct, detail) => post({ type: 'PROGRESS', step: 'load', pct, detail }))
+        return transcribe('tiny', lang, pcm, (pct, detail) => post({ type: 'PROGRESS', step: 'load', pct, detail }))
       }
     }
     const { transcribe } = await localEngine()
@@ -104,15 +113,17 @@ export function handleAsrPort(port: any): void {
 
       try {
         if (tier === 'server') {
+          // Warn if the server is down right now, but do NOT downgrade the
+          // tier — runInference retries the server per chunk, so starting
+          // the companion server mid-session recovers automatically.
           const up = await checkServerHealth(serverUrl)
           if (!up) {
             serverFallbackWarned = true
             post({
               type: 'ERROR',
-              error: `ASR server not reachable at ${serverUrl} — using local transcription instead.`,
+              error: `ASR server not reachable at ${serverUrl} — start it (server/start_asr_server.bat); using slow local fallback (tiny) until then.`,
               fatal: false,
             })
-            tier = 'local'
           }
         }
         if (tier === 'local') {
