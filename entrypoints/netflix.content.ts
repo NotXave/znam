@@ -436,6 +436,13 @@ export default defineContentScript({
       }
     }
 
+    capture.onSilentStretch = () => {
+      showBanner(
+        '⚠ Only silence is arriving from the audio device. Route Firefox\'s output to the virtual cable: Windows volume mixer → Firefox → output "CABLE Input", and pick "CABLE Output" as znam\'s device. To keep hearing sound: mmsys.cpl → Recording → CABLE Output → Listen → play through your speakers.',
+        true,
+      )
+    }
+
     async function startCaptureWith(deviceId: string) {
       const result: CaptureStartResult = await capture.start(
         deviceId,

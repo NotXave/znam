@@ -70,6 +70,13 @@ export class AudioCapture {
   // request, in which case onFrame downsamples to 16kHz itself.
   private contextRate = SAMPLE_RATE
 
+  /** Fired once after several consecutive silent windows — the classic
+   *  symptom of the virtual cable receiving no routed audio (Firefox's
+   *  output still going to the real speakers). Reset by any voiced window. */
+  onSilentStretch: (() => void) | null = null
+  private silentWindows = 0
+  private silenceWarned = false
+
   get active(): boolean {
     return this.stream != null
   }
@@ -174,9 +181,16 @@ export class AudioCapture {
     for (let i = 0; i < win.length; i++) sumSq += win[i] * win[i]
     const rms = Math.sqrt(sumSq / win.length)
     if (rms >= 0.0015) {
+      this.silentWindows = 0
+      this.silenceWarned = false
       this.onChunk(win, this.windowStartVideoTime)
     } else {
       console.log('[znam ASR] skipping silent window (rms', rms.toFixed(5) + ')')
+      this.silentWindows++
+      if (this.silentWindows >= 3 && !this.silenceWarned) {
+        this.silenceWarned = true
+        this.onSilentStretch?.()
+      }
     }
 
     // Keep the trailing overlap so the next window starts 2s before this one
