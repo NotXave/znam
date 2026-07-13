@@ -85,13 +85,19 @@ export async function loadModel(
       wasm.proxy = false
     }
     return pipeline('automatic-speech-recognition', modelId, {
-      // Force 8-bit quantisation. transformers.js otherwise defaults the
-      // decoder to q4 (4-bit MatMulNBits), which this onnxruntime-web build
-      // can't build a session for ("Missing required scale … MatMulNBits").
-      // q8 uses plain DequantizeLinear — well supported on the wasm backend —
-      // and keeps the download small. fp16 needs webgpu (absent here).
+      // q8 is already the wasm default, but pin it explicitly. fp16 needs
+      // webgpu (absent here).
       dtype: 'q8',
       device: 'wasm',
+      // Drop graph optimisation to 'basic'. At the default 'all'/extended
+      // level ORT runs a TransposeDQWeightsForMatMulNBits fusion pass over
+      // the decoder's dequantised embedding weights and throws "Missing
+      // required scale … MatMulNBits" for this whisper export — session
+      // creation then fails outright. 'basic' skips that pass, so ORT just
+      // executes the plain DequantizeLinear + MatMul (correct, marginally
+      // slower). session_options is forwarded verbatim to ORT by
+      // transformers.js.
+      session_options: { graphOptimizationLevel: 'basic' },
       progress_callback: (p: any) => {
         if (p.status === 'progress' && typeof p.progress === 'number') {
           onProgress(Math.round(p.progress), p.file || modelId)
