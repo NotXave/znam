@@ -165,7 +165,19 @@ export class AudioCapture {
       offset += f.length
     }
 
-    this.onChunk(flat.slice(0, WINDOW_SAMPLES), this.windowStartVideoTime)
+    // Cheap VAD: skip windows that are essentially silent — Netflix has long
+    // stretches of music/silence, and every skipped window is several seconds
+    // of Whisper inference saved. RMS over the window; 0.0015 is well below
+    // any spoken dialogue but above line noise.
+    const win = flat.slice(0, WINDOW_SAMPLES)
+    let sumSq = 0
+    for (let i = 0; i < win.length; i++) sumSq += win[i] * win[i]
+    const rms = Math.sqrt(sumSq / win.length)
+    if (rms >= 0.0015) {
+      this.onChunk(win, this.windowStartVideoTime)
+    } else {
+      console.log('[znam ASR] skipping silent window (rms', rms.toFixed(5) + ')')
+    }
 
     // Keep the trailing overlap so the next window starts 2s before this one
     // ended, so words split across a boundary still appear whole somewhere.
