@@ -85,6 +85,13 @@ export async function loadModel(
       wasm.proxy = false
     }
     return pipeline('automatic-speech-recognition', modelId, {
+      // Force 8-bit quantisation. transformers.js otherwise defaults the
+      // decoder to q4 (4-bit MatMulNBits), which this onnxruntime-web build
+      // can't build a session for ("Missing required scale … MatMulNBits").
+      // q8 uses plain DequantizeLinear — well supported on the wasm backend —
+      // and keeps the download small. fp16 needs webgpu (absent here).
+      dtype: 'q8',
+      device: 'wasm',
       progress_callback: (p: any) => {
         if (p.status === 'progress' && typeof p.progress === 'number') {
           onProgress(Math.round(p.progress), p.file || modelId)
