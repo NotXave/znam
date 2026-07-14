@@ -117,6 +117,8 @@ export interface Settings {
   netflixAudioDeviceId: string
   /** Dual sub: show the native-language translation line under each cue. */
   netflixShowNative: boolean
+  /** Dashboard theme (app page): midnight | daylight | nord | sepia. */
+  appTheme: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -139,6 +141,7 @@ export const DEFAULT_SETTINGS: Settings = {
   netflixSubtitleMode: 'replace',
   netflixAudioDeviceId: '',
   netflixShowNative: true,
+  appTheme: 'midnight',
 }
 
 // ── Lookup results (reused from manga-translator) ───────────

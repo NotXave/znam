@@ -16,11 +16,21 @@
         <button data-tab="import">Import</button>
         <button data-tab="calibrate">Calibrate</button>
       </nav>
+      <select id="theme-select" title="Theme">
+        <option value="midnight">🌙 Midnight</option>
+        <option value="daylight">☀️ Daylight</option>
+        <option value="nord">🧊 Nord</option>
+        <option value="sepia">📜 Sepia</option>
+      </select>
       <select id="lang-select" title="Language"></select>
     </header>
 
     <main>
       <section id="tab-stats" class="tab active">
+        <div class="card">
+          <h2>Language level</h2>
+          <div id="stats-level"></div>
+        </div>
         <div id="stats-tiles" class="stat-tiles"></div>
         <div id="stats-tiles2" class="stat-tiles"></div>
         <div class="card">

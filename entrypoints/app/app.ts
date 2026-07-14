@@ -85,6 +85,8 @@ async function renderStats() {
   if (!s || (s as any).error) return
   if (d && !(d as any).error) renderDeepStats(d, s)
 
+  renderLevelCard(document.getElementById('stats-level')!, s.counts.known)
+
   document.getElementById('stats-tiles')!.innerHTML =
     tile(s.counts.known.toLocaleString(), 'Words known') +
     tile(s.counts.learning.toLocaleString(), 'Learning') +
@@ -121,6 +123,47 @@ async function renderStats() {
     <div class="bar-row"><span class="bar-label">This week</span><span>${lib.readThisWeek} read</span></div>
     <div class="bar-row"><span class="bar-label">Sweet spot</span><span>${lib.sweetSpot} at 90–98% comprehensible</span></div>
   `
+}
+
+// Vocabulary-size → CEFR mapping (passive vocabulary; widely used rough
+// thresholds, e.g. Milton & Alexiou 2009). Vocabulary is only one dimension
+// of a CEFR level — the card says so.
+const CEFR_LEVELS: [level: string, minKnown: number, description: string][] = [
+  ['A1', 300, 'Beginner — survival vocabulary'],
+  ['A2', 1200, 'Elementary — everyday topics'],
+  ['B1', 2500, 'Intermediate — most daily conversation'],
+  ['B2', 5000, 'Upper intermediate — native media with some effort'],
+  ['C1', 8000, 'Advanced — comfortable with most content'],
+  ['C2', 16000, 'Near-native vocabulary range'],
+]
+
+function renderLevelCard(el: HTMLElement, known: number) {
+  let idx = -1
+  for (let i = 0; i < CEFR_LEVELS.length; i++) if (known >= CEFR_LEVELS[i][1]) idx = i
+  const level = idx >= 0 ? CEFR_LEVELS[idx][0] : 'A0'
+  const desc = idx >= 0 ? CEFR_LEVELS[idx][2] : 'Just starting out'
+  const next = CEFR_LEVELS[idx + 1]
+  const lo = idx >= 0 ? CEFR_LEVELS[idx][1] : 0
+  const langName = LANGUAGES.find(([c]) => c === lang)?.[1] ?? lang
+
+  let meter = ''
+  if (next) {
+    const pct = Math.max(2, Math.min(100, Math.round(((known - lo) / (next[1] - lo)) * 100)))
+    meter = `
+      <div class="level-meter" title="${known.toLocaleString()} of ${next[1].toLocaleString()} words toward ${next[0]}">
+        <span class="bar-fill" style="width:${pct}%"></span>
+      </div>
+      <div class="level-scale"><span>${level}</span><span>${(next[1] - known).toLocaleString()} words to ${next[0]}</span><span>${next[0]}</span></div>`
+  }
+  el.innerHTML = `
+    <div class="level-wrap">
+      <div class="level-badge">${level}</div>
+      <div class="level-body">
+        <div>Your ${langName} vocabulary (~<b>${known.toLocaleString()}</b> known words) is roughly <b>${level}</b> — ${desc}.</div>
+        ${meter}
+        <div class="hint" style="margin-bottom:0">Estimate from vocabulary size only — a full CEFR level also needs grammar, listening and speaking practice.</div>
+      </div>
+    </div>`
 }
 
 function renderComprehensionCard(
@@ -161,15 +204,30 @@ function renderComprehensionCard(
 // (known/learning) validated against the card surface; text stays in text
 // tokens, marks carry the color.
 
-const KIND_COLORS: Record<string, string> = { page: '#3987e5', youtube: '#e66767', netflix: '#9085e9' }
 const KIND_LABELS: Record<string, string> = { page: 'Pages', youtube: 'YouTube', netflix: 'Netflix' }
-const KNOWN_C = '#5d9e4a'
-const LEARNING_C = '#b8a12e'
-const GRID_C = '#2a2a44'
-const MUTED_C = '#8a8aa0'
-const SURFACE_C = '#1a1a2e'
-const ACCENT_C = '#3987e5'
-const HEAT_RAMP = ['#23233c', '#1c5cab', '#2a78d6', '#5598e7', '#9ec5f4']
+
+// Chart colors come from the active theme's CSS variables so the SVGs
+// re-color with it; VZ is refreshed at the top of every renderDeepStats.
+// Known/learning stay fixed — they're status semantics, not theme identity.
+function vizColors() {
+  const cs = getComputedStyle(document.documentElement)
+  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback
+  return {
+    kind: {
+      page: v('--c-page', '#3987e5'),
+      youtube: v('--c-youtube', '#e66767'),
+      netflix: v('--c-netflix', '#9085e9'),
+    } as Record<string, string>,
+    known: '#5d9e4a',
+    learning: '#b8a12e',
+    grid: v('--viz-grid', '#2a2a44'),
+    surface: v('--card', '#1a1a2e'),
+    accent: v('--accent-2', '#3987e5'),
+    untracked: v('--track-solid', '#16162a'),
+    heat: [v('--heat-0', '#23233c'), v('--heat-1', '#1c5cab'), v('--heat-2', '#2a78d6'), v('--heat-3', '#5598e7'), v('--heat-4', '#9ec5f4')],
+  }
+}
+let VZ = vizColors()
 
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 const fmtDay = (t: number) => new Date(t).toISOString().slice(0, 10)
@@ -208,14 +266,14 @@ function renderGrowthChart(el: HTMLElement, growth: { t: number; total: number }
   const last = growth[growth.length - 1]
   el.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" class="viz" role="img" aria-label="Cumulative tracked words over time">
-      ${yTicks.map(v => `<line x1="${L}" x2="${W - R}" y1="${yf(v)}" y2="${yf(v)}" stroke="${GRID_C}" stroke-width="1"/>
+      ${yTicks.map(v => `<line x1="${L}" x2="${W - R}" y1="${yf(v)}" y2="${yf(v)}" stroke="${VZ.grid}" stroke-width="1"/>
         <text x="${L - 6}" y="${yf(v) + 4}" text-anchor="end" class="viz-tick">${v.toLocaleString()}</text>`).join('')}
       ${months.map(m => `<text x="${m.x}" y="${H - 6}" text-anchor="middle" class="viz-tick">${m.label}</text>`).join('')}
-      <path d="${area}" fill="${ACCENT_C}" opacity="0.1"/>
-      <path d="${line}" fill="none" stroke="${ACCENT_C}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-      <circle cx="${xf(last.t)}" cy="${yf(last.total)}" r="4.5" fill="${ACCENT_C}" stroke="${SURFACE_C}" stroke-width="2"/>
+      <path d="${area}" fill="${VZ.accent}" opacity="0.1"/>
+      <path d="${line}" fill="none" stroke="${VZ.accent}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${xf(last.t)}" cy="${yf(last.total)}" r="4.5" fill="${VZ.accent}" stroke="${VZ.surface}" stroke-width="2"/>
       <text x="${xf(last.t) + 8}" y="${yf(last.total) + 4}" class="viz-label">${last.total.toLocaleString()}</text>
-      <circle class="viz-hover-dot" r="4.5" fill="${ACCENT_C}" stroke="${SURFACE_C}" stroke-width="2" style="display:none"/>
+      <circle class="viz-hover-dot" r="4.5" fill="${VZ.accent}" stroke="${VZ.surface}" stroke-width="2" style="display:none"/>
       <rect class="viz-hover-zone" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/>
     </svg>`
   const svg = el.querySelector('svg')!
@@ -259,7 +317,7 @@ function renderHeatmap(el: HTMLElement, activity: Record<string, number>) {
   const values = Object.values(activity).filter(v => v > 0).sort((a, b) => a - b)
   const q = (f: number) => values.length ? values[Math.min(values.length - 1, Math.floor(values.length * f))] : 1
   const thresholds = [1, Math.max(2, q(0.5)), Math.max(3, q(0.75)), Math.max(4, q(0.9))]
-  const cellFor = (v: number) => v <= 0 ? HEAT_RAMP[0] : v < thresholds[1] ? HEAT_RAMP[1] : v < thresholds[2] ? HEAT_RAMP[2] : v < thresholds[3] ? HEAT_RAMP[3] : HEAT_RAMP[4]
+  const cellFor = (v: number) => v <= 0 ? VZ.heat[0] : v < thresholds[1] ? VZ.heat[1] : v < thresholds[2] ? VZ.heat[2] : v < thresholds[3] ? VZ.heat[3] : VZ.heat[4]
   const cell = 12, gap = 3
   const W = weeks * (cell + gap) + 30, H = 7 * (cell + gap) + 18
   let cells = ''
@@ -279,7 +337,7 @@ function renderHeatmap(el: HTMLElement, activity: Record<string, number>) {
       ${cells}
     </svg>
     <div class="legend-row" style="justify-content:flex-end">less
-      ${HEAT_RAMP.map(c => `<span class="legend-swatch" style="background:${c}"></span>`).join('')} more
+      ${VZ.heat.map(c => `<span class="legend-swatch" style="background:${c}"></span>`).join('')} more
     </div>`
 }
 
@@ -295,12 +353,12 @@ function renderFreqCoverage(el: HTMLElement, cov: DeepStats['freqCoverage']) {
     return `<div class="bar-row">
       <span class="bar-label">Top ${band.toLocaleString()}</span>
       <span class="bar-track freq-track" title="Top ${band.toLocaleString()}: ${known.toLocaleString()} known, ${learning.toLocaleString()} learning, ${(total - known - learning).toLocaleString()} untracked">
-        <span class="bar-fill" style="width:${kp}%;background:${KNOWN_C}"></span>
-        <span class="bar-fill" style="width:${lp}%;background:${LEARNING_C};margin-left:2px"></span>
+        <span class="bar-fill" style="width:${kp}%;background:${VZ.known}"></span>
+        <span class="bar-fill" style="width:${lp}%;background:${VZ.learning};margin-left:2px"></span>
       </span>
       <span class="bar-num">${Math.round(kp)}%</span>
     </div>`
-  }).join('') + legendRow([[KNOWN_C, 'Known'], [LEARNING_C, 'Learning'], [GRID_C, 'Untracked']])
+  }).join('') + legendRow([[VZ.known, 'Known'], [VZ.learning, 'Learning'], [VZ.grid, 'Untracked']])
 }
 
 /** Comprehension scatter: one dot per library item, colored by kind. */
@@ -321,14 +379,14 @@ function renderScoreHistory(el: HTMLElement, hist: DeepStats['scoreHistory']) {
   }
   el.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" class="viz" role="img" aria-label="Comprehension score of each item over time">
-      <rect x="${L}" y="${yf(0.98)}" width="${W - L - R}" height="${yf(0.9) - yf(0.98)}" fill="${KNOWN_C}" opacity="0.08"/>
+      <rect x="${L}" y="${yf(0.98)}" width="${W - L - R}" height="${yf(0.9) - yf(0.98)}" fill="${VZ.known}" opacity="0.08"/>
       <text x="${W - R + 6}" y="${yf(0.94) + 4}" class="viz-tick">sweet spot</text>
-      ${[0.5, 0.75, 1].map(v => `<line x1="${L}" x2="${W - R}" y1="${yf(v)}" y2="${yf(v)}" stroke="${GRID_C}" stroke-width="1"/>
+      ${[0.5, 0.75, 1].map(v => `<line x1="${L}" x2="${W - R}" y1="${yf(v)}" y2="${yf(v)}" stroke="${VZ.grid}" stroke-width="1"/>
         <text x="${L - 6}" y="${yf(v) + 4}" text-anchor="end" class="viz-tick">${Math.round(v * 100)}%</text>`).join('')}
       ${xt.join('')}
-      ${hist.map(h => `<circle cx="${xf(h.t).toFixed(1)}" cy="${yf(h.score).toFixed(1)}" r="4" fill="${KIND_COLORS[h.kind]}" stroke="${SURFACE_C}" stroke-width="2"><title>${fmtDay(h.t)} — ${Math.round(h.score * 100)}% (${KIND_LABELS[h.kind]})</title></circle>`).join('')}
+      ${hist.map(h => `<circle cx="${xf(h.t).toFixed(1)}" cy="${yf(h.score).toFixed(1)}" r="4" fill="${VZ.kind[h.kind]}" stroke="${VZ.surface}" stroke-width="2"><title>${fmtDay(h.t)} — ${Math.round(h.score * 100)}% (${KIND_LABELS[h.kind]})</title></circle>`).join('')}
     </svg>
-    ${legendRow(kinds.map(k => [KIND_COLORS[k], KIND_LABELS[k]] as [string, string]))}`
+    ${legendRow(kinds.map(k => [VZ.kind[k], KIND_LABELS[k]] as [string, string]))}`
 }
 
 /** Weekly reading/watching volume — stacked columns by kind. */
@@ -348,7 +406,7 @@ function renderVolume(el: HTMLElement, weeks: DeepStats['weeklyReading']) {
       if (!v) continue
       const y1 = yf(acc), y0 = yf(acc + v)
       const isTop = acc + v === totals[i]
-      bars += `<rect x="${x.toFixed(1)}" y="${(y0 + (isTop ? 0 : 1)).toFixed(1)}" width="${bw}" height="${Math.max(1, y1 - y0 - (isTop ? 0 : 2)).toFixed(1)}" fill="${KIND_COLORS[kind]}" ${isTop ? 'rx="3"' : ''}><title>Week of ${w.week}: ${v} ${KIND_LABELS[kind]}</title></rect>`
+      bars += `<rect x="${x.toFixed(1)}" y="${(y0 + (isTop ? 0 : 1)).toFixed(1)}" width="${bw}" height="${Math.max(1, y1 - y0 - (isTop ? 0 : 2)).toFixed(1)}" fill="${VZ.kind[kind]}" ${isTop ? 'rx="3"' : ''}><title>Week of ${w.week}: ${v} ${KIND_LABELS[kind]}</title></rect>`
       acc += v
     }
     if (i % 2 === 0) bars += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="viz-tick">${w.week}</text>`
@@ -356,11 +414,11 @@ function renderVolume(el: HTMLElement, weeks: DeepStats['weeklyReading']) {
   const yTicks = [0, Math.ceil(max / 2), max]
   el.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" class="viz" role="img" aria-label="Items read or watched per week">
-      ${yTicks.map(v => `<line x1="${L}" x2="${W - R}" y1="${yf(v)}" y2="${yf(v)}" stroke="${GRID_C}" stroke-width="1"/>
+      ${yTicks.map(v => `<line x1="${L}" x2="${W - R}" y1="${yf(v)}" y2="${yf(v)}" stroke="${VZ.grid}" stroke-width="1"/>
         <text x="${L - 6}" y="${yf(v) + 4}" text-anchor="end" class="viz-tick">${v}</text>`).join('')}
       ${bars}
     </svg>
-    ${legendRow([[KIND_COLORS.page, 'Pages'], [KIND_COLORS.youtube, 'YouTube'], [KIND_COLORS.netflix, 'Netflix']])}`
+    ${legendRow([[VZ.kind.page, 'Pages'], [VZ.kind.youtube, 'YouTube'], [VZ.kind.netflix, 'Netflix']])}`
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -372,6 +430,7 @@ const SOURCE_LABELS: Record<string, string> = {
 }
 
 function renderDeepStats(d: DeepStats, s: Stats) {
+  VZ = vizColors() // re-read: the theme may have changed since module load
   document.getElementById('stats-tiles2')!.innerHTML =
     tile(d.streak ? `🔥 ${d.streak}` : '0', 'Day streak') +
     tile('+' + d.knownThisMonth.toLocaleString(), 'Marked known (30 days)') +
@@ -387,7 +446,7 @@ function renderDeepStats(d: DeepStats, s: Stats) {
   const srcMax = Math.max(1, ...Object.values(d.sources))
   document.getElementById('stats-sources')!.innerHTML = Object.entries(d.sources)
     .sort((a, b) => b[1] - a[1])
-    .map(([src, n]) => bar(SOURCE_LABELS[src] || src, n, srcMax, ACCENT_C))
+    .map(([src, n]) => bar(SOURCE_LABELS[src] || src, n, srcMax, VZ.accent))
     .join('')
 
   const hardestEl = document.getElementById('stats-hardest')!
@@ -397,7 +456,7 @@ function renderDeepStats(d: DeepStats, s: Stats) {
     hardestEl.innerHTML = `<table class="hardest-table">
       ${d.hardest.map(h => {
         const chip = h.status === 'known'
-          ? `<span class="hw-chip" style="background:${KNOWN_C}">known</span>`
+          ? `<span class="hw-chip" style="background:${VZ.known}">known</span>`
           : `<span class="hw-chip" style="background:${LEVEL_COLORS[(h.level ?? 1) - 1]}">stage ${h.level ?? 1}</span>`
         return `<tr><td class="hw-lemma">${esc(h.lemma)}</td><td class="hw-tr">${esc(h.translation)}</td><td>${chip}</td><td class="hw-n">${h.lookups}×</td></tr>`
       }).join('')}
@@ -700,6 +759,21 @@ async function init() {
   langSel.addEventListener('change', async () => {
     lang = langSel.value
     await saveSettings({ ...(await getSettings()), targetLanguage: lang })
+    const activeTab = (document.querySelector('nav button.active') as HTMLElement)?.dataset.tab
+    if (activeTab) refreshers[activeTab]?.()
+  })
+
+  // Theme: applied via data attribute; charts re-render to pick up the new
+  // CSS-variable palette.
+  const themeSel = $<HTMLSelectElement>('theme-select')
+  const applyTheme = (theme: string) => {
+    document.documentElement.dataset.theme = theme
+  }
+  applyTheme(settings.appTheme || 'midnight')
+  themeSel.value = settings.appTheme || 'midnight'
+  themeSel.addEventListener('change', async () => {
+    applyTheme(themeSel.value)
+    await saveSettings({ ...(await getSettings()), appTheme: themeSel.value })
     const activeTab = (document.querySelector('nav button.active') as HTMLElement)?.dataset.tab
     if (activeTab) refreshers[activeTab]?.()
   })
