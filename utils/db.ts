@@ -60,6 +60,12 @@ export async function getAllWords(lang: string): Promise<WordRecord[]> {
   return reqResult(db.transaction('words').objectStore('words').getAll(range))
 }
 
+/** Every word across every language — for the full backup export. */
+export async function getAllWordsEveryLang(): Promise<WordRecord[]> {
+  const db = await openDb()
+  return reqResult(db.transaction('words').objectStore('words').getAll())
+}
+
 export async function getWord(lang: string, lemma: string): Promise<WordRecord | undefined> {
   const db = await openDb()
   return reqResult(db.transaction('words').objectStore('words').get([lang, lemma]))

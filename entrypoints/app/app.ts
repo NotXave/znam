@@ -756,6 +756,51 @@ async function init() {
     if (words.length) download(`znam-${lang}-frequent-anki.txt`, wordsToAnki(words))
   })
 
+  // ── Full backup & restore ──
+  $('backup-export').addEventListener('click', async () => {
+    const backup = await send({ type: 'EXPORT_BACKUP' })
+    if (!backup || backup.error) return
+    const stamp = new Date().toISOString().slice(0, 10)
+    download(`znam-backup-${stamp}.json`, JSON.stringify(backup))
+    const el = $('backup-status')
+    el.hidden = false
+    el.textContent = `✓ Backup saved — ${backup.words.length.toLocaleString()} words, ${backup.library.length.toLocaleString()} library items.`
+  })
+  $<HTMLInputElement>('backup-restore').addEventListener('change', async (e) => {
+    const input = e.target as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+    const el = $('backup-status')
+    el.hidden = false
+    let backup: any
+    try {
+      backup = JSON.parse(await file.text())
+    } catch {
+      el.textContent = '✗ Not a valid JSON file.'
+      return
+    }
+    if (backup?.format !== 'znam-backup' || !Array.isArray(backup.words)) {
+      el.textContent = '✗ Not a znam backup file.'
+      return
+    }
+    const when = backup.exportedAt ? new Date(backup.exportedAt).toLocaleDateString() : 'unknown date'
+    const ok = confirm(
+      `Restore backup from ${when}?\n\n` +
+      `${backup.words.length.toLocaleString()} words, ${(backup.library?.length ?? 0).toLocaleString()} library items, settings.\n\n` +
+      `Existing entries with the same word are overwritten by the backup; everything else is kept.`,
+    )
+    input.value = ''
+    if (!ok) { el.hidden = true; return }
+    el.textContent = 'Restoring…'
+    const res = await send({ type: 'IMPORT_BACKUP', payload: { backup } })
+    if (res?.error) {
+      el.textContent = `✗ ${res.error}`
+      return
+    }
+    el.textContent = `✓ Restored ${res.words.toLocaleString()} words and ${res.library.toLocaleString()} library items. Reloading…`
+    setTimeout(() => location.reload(), 1200)
+  })
+
   $('setup-download').addEventListener('click', () =>
     runSetup({ type: 'SETUP_LANGUAGE', lang }),
   )

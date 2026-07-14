@@ -1,17 +1,18 @@
-import type { LearningLevel, Message, TokenInfo, WordRecord, WordStatus } from '../utils/types'
+import { DEFAULT_SETTINGS, type LearningLevel, type Message, type TokenInfo, type WordRecord, type WordStatus } from '../utils/types'
 import { normalizeCase, translate, translateBatch } from '../utils/translate'
 import { translateBatchDeepL, translateDeepL } from '../utils/deepl'
 import { handleOcrPort } from '../utils/manga-ocr-bg'
 import { handleAsrPort } from '../utils/asr-bg'
 import { lookupWiktionary } from '../utils/dictionary'
 import { lookupReverso } from '../utils/reverso'
-import { getSettings } from '../utils/settings'
+import { getSettings, saveSettings } from '../utils/settings'
 import { lemmatizeBatch } from '../utils/lemmatizer'
 import { isCapitalized } from '../utils/tokenizer'
 import {
   deleteLibraryEntry,
   deleteWord,
   getAllWords,
+  getAllWordsEveryLang,
   getLibrary,
   getLibraryEntry,
   getWord,
@@ -593,6 +594,43 @@ export default defineBackground(() => {
           const words = await getAllWords(message.payload.lang)
           const status = message.payload.status
           return status ? words.filter(w => w.status === status) : words
+        }
+
+        case 'EXPORT_BACKUP': {
+          // Full backup: every word in every language, the whole library, and
+          // settings. Lemma/frequency tables are excluded on purpose — they're
+          // re-downloadable via language setup and would bloat the file.
+          const [words, library, settings] = await Promise.all([
+            getAllWordsEveryLang(),
+            getLibrary(),
+            getSettings(),
+          ])
+          return { format: 'znam-backup', version: 1, exportedAt: Date.now(), words, library, settings }
+        }
+
+        case 'IMPORT_BACKUP': {
+          const b = message.payload.backup as any
+          if (!b || b.format !== 'znam-backup' || !Array.isArray(b.words)) {
+            return { error: 'Not a znam backup file' }
+          }
+          const words = (b.words as WordRecord[]).filter(w => w && w.lang && w.lemma && w.status)
+          await putWords(words) // backup wins on [lang, lemma] collisions
+          let libraryCount = 0
+          if (Array.isArray(b.library)) {
+            for (const entry of b.library as LibraryEntry[]) {
+              if (entry && entry.id && entry.url) {
+                await putLibraryEntry(entry)
+                libraryCount++
+              }
+            }
+          }
+          if (b.settings && typeof b.settings === 'object') {
+            await saveSettings({ ...DEFAULT_SETTINGS, ...b.settings })
+          }
+          // Word statuses changed under the cache's feet — rebuild lazily.
+          statusMaps.clear()
+          statusLoads.clear()
+          return { words: words.length, library: libraryCount }
         }
 
         case 'IMPORT_WORDS': {

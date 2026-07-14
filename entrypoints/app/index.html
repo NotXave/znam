@@ -147,6 +147,21 @@
 
       <section id="tab-import" class="tab">
         <div class="card">
+          <h2>Backup &amp; restore</h2>
+          <p class="hint">
+            One JSON file with <b>everything</b>: your words in every language,
+            the whole library, and your settings — for moving to a new PC or
+            surviving a reset. (Dictionaries and frequency lists aren't
+            included; language setup re-downloads them.)
+          </p>
+          <div class="toolbar">
+            <button id="backup-export">⬇ Download full backup</button>
+            <label style="display:inline-flex;align-items:center;gap:6px">Restore
+              <input type="file" id="backup-restore" accept=".json" /></label>
+          </div>
+          <div id="backup-status" class="hint" hidden></div>
+        </div>
+        <div class="card">
           <h2>Import vocabulary</h2>
           <p class="hint">
             Auto-detects the format: the <b>Lute database</b> (<code>lute.db</code>,

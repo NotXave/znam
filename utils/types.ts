@@ -257,6 +257,8 @@ export type Message =
   | { type: 'RECORD_EXPOSURES'; payload: { lang: string; lemmas: string[] } }
   | { type: 'GET_STATS'; payload: { lang: string } }
   | { type: 'GET_DEEP_STATS'; payload: { lang: string } }
+  | { type: 'EXPORT_BACKUP' }
+  | { type: 'IMPORT_BACKUP'; payload: { backup: unknown } }
   | { type: 'MARK_PAGE_READ'; payload: { lang: string; lemmas: string[] } }
   | { type: 'SAVE_LIBRARY_ENTRY'; payload: Omit<LibraryEntry, 'createdAt' | 'updatedAt'> }
   | { type: 'GET_LIBRARY'; payload: { lang?: string } }
