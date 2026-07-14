@@ -1,6 +1,6 @@
 import type { OcrEvent, OcrRegion, OcrRequest } from './types'
 import { toTesseractLangs } from './ocr/langs'
-import { checkServerHealth, serverDetect, serverOcr } from './ocr/server-client'
+import { checkServerHealth, serverOcr } from './ocr/server-client'
 import { getSettings } from './settings'
 
 // Firefox MV2: the persistent background page hosts the Tesseract worker
@@ -79,40 +79,6 @@ async function annotateRegionColors(blob: Blob, regions: OcrRegion[]): Promise<v
   }
 }
 
-/**
- * Hybrid tier: the server's comic-text-detector finds the speech bubbles
- * (whole-page Tesseract segmentation is unreliable on busy manga/manhwa art),
- * then Tesseract reads each cropped bubble — which it does well.
- */
-async function hybridOcr(blob: Blob, lang: string, serverUrl: string): Promise<OcrRegion[]> {
-  const detected = await serverDetect(serverUrl, blob)
-  if (detected.length === 0) return []
-  const bmp = await createImageBitmap(blob)
-  const { recognizeCrop } = await import('./ocr/tesseract-host')
-  const out: OcrRegion[] = []
-  let seq = 0
-  try {
-    for (const det of detected) {
-      const pad = Math.round(Math.max(det.bbox.w, det.bbox.h) * 0.06) + 4
-      const x = Math.max(0, det.bbox.x - pad)
-      const y = Math.max(0, det.bbox.y - pad)
-      const w = Math.min(bmp.width - x, det.bbox.w + pad * 2)
-      const h = Math.min(bmp.height - y, det.bbox.h + pad * 2)
-      if (w < 8 || h < 8) continue
-      const canvas = new OffscreenCanvas(w, h)
-      canvas.getContext('2d')!.drawImage(bmp, x, y, w, h, 0, 0, w, h)
-      const cropBlob = await canvas.convertToBlob({ type: 'image/png' })
-      for (const region of await recognizeCrop(cropBlob, lang, x, y)) {
-        region.id = `r${seq++}`
-        out.push(region)
-      }
-    }
-  } finally {
-    bmp.close()
-  }
-  return out
-}
-
 export function handleOcrPort(port: any): void {
   const post = (event: OcrEvent) => {
     try { port.postMessage(event) } catch { /* port closed */ }
@@ -122,9 +88,12 @@ export function handleOcrPort(port: any): void {
     if (msg.type !== 'OCR_PAGE') return
 
     enqueueOcr(async () => {
-      // Tier selection: Japanese needs the server; latin scripts use the
-      // server's bubble detector + Tesseract when the server is up (much
-      // better on busy art), otherwise plain whole-page Tesseract.
+      // Tier selection: the companion server (server/ocr_server.py) does both
+      // detection (comic-text-detector) and recognition (manga-ocr for ja,
+      // EasyOCR for latin scripts) properly — use it for every language when
+      // it's up. Whole-page Tesseract is the offline fallback of last resort;
+      // it reads comic lettering poorly (the old server-detect + Tesseract
+      // hybrid did too, which is why it's gone).
       const tessLangs = toTesseractLangs(msg.lang)
       const settings = await getSettings()
       const serverUp = await checkServerHealth(settings.mangaServerUrl)
@@ -132,7 +101,7 @@ export function handleOcrPort(port: any): void {
         post({ type: 'UNSUPPORTED', imageId: msg.imageId, lang: msg.lang })
         return
       }
-      const tier = !tessLangs ? 'server' : serverUp ? 'hybrid' : 'tesseract'
+      const tier = serverUp ? 'server' : 'tesseract'
 
       const cacheKey = `${msg.url}|${msg.lang}|${tier}`
       const cached = ocrCache.get(cacheKey)
@@ -148,14 +117,6 @@ export function handleOcrPort(port: any): void {
         let regions: OcrRegion[]
         if (tier === 'server') {
           regions = await serverOcr(settings.mangaServerUrl, blob, msg.lang)
-        } else if (tier === 'hybrid') {
-          try {
-            regions = await hybridOcr(blob, msg.lang, settings.mangaServerUrl)
-          } catch (err) {
-            console.warn('[znam] hybrid OCR failed, falling back to plain Tesseract:', err)
-            const { recognizePage } = await import('./ocr/tesseract-host')
-            regions = await recognizePage(blob, msg.lang)
-          }
         } else {
           const { recognizePage } = await import('./ocr/tesseract-host')
           regions = await recognizePage(blob, msg.lang)

@@ -228,13 +228,13 @@ export class ReaderTooltip {
   private startLookup(text: string, x: number, y: number, isPhrase: boolean, target: LookupTarget, span?: HTMLElement) {
     const seq = ++this.lookupSeq
     this.activeWord = text
-    // Single word → its lemma. Short phrase (2–4 words) → saveable as a
+    // Single word → its lemma. Phrase (2–8 words) → saveable as a
     // multi-word vocab item keyed by the phrase itself. Longer selections
     // (e.g. a right-clicked sentence) aren't saved, only translated.
     if (isPhrase) {
       const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim()
       const wordCount = normalized.split(' ').length
-      this.activeLemma = wordCount >= 2 && wordCount <= 4 && normalized.length <= 40 ? normalized : ''
+      this.activeLemma = wordCount >= 2 && wordCount <= 8 && normalized.length <= 100 ? normalized : ''
     } else {
       this.activeLemma = span ? this.statusApi.lemmaFor(span) : ''
     }
@@ -477,7 +477,21 @@ export class ReaderTooltip {
       ? dropdownItems.join('')
       : '<div style="padding:8px 4px;color:#666;font-size:12px;text-align:center">No additional meanings found</div>'
 
-    const hasDropdown = dropdownItems.length > 0
+    const hasDropdown = dropdownItems.length > 0 || !!this.activeLemma
+
+    // Progressive re-renders rebuild the tooltip; don't wipe a half-typed
+    // custom translation.
+    const prevDraft = (this.tooltip.querySelector('.ci-dd-custom') as HTMLInputElement | null)?.value || ''
+
+    // Own-translation input — only when the lookup is saveable (has a lemma).
+    const customRow = this.activeLemma ? `
+      <div class="ci-dd-source">Your own translation</div>
+      <div style="display:flex;gap:4px;padding:2px 4px 6px">
+        <input class="ci-dd-custom" type="text" placeholder="Type and press Enter…"
+          style="flex:1;background:#242440;border:1px solid #333;border-radius:4px;color:#fff;font-size:12px;padding:3px 6px;outline:none">
+        <span class="ci-dd-custom-save" title="Save as this word's translation"
+          style="cursor:pointer;background:#2d6e3e;border-radius:4px;padding:3px 8px;font-size:12px;color:#fff">✓</span>
+      </div>` : ''
 
     Object.assign(this.tooltip.style, this.tooltipBaseStyle(x, y, 380), {
       maxWidth: '380px',
@@ -494,6 +508,7 @@ export class ReaderTooltip {
         <span class="ci-tooltip-close" style="margin-left:auto;cursor:pointer;color:#555;font-size:12px;padding-left:6px">✕</span>
       </div>
       <div class="ci-dd-body" style="display:${this.ddOpen ? 'block' : 'none'};margin-top:4px;max-height:300px;overflow-y:auto;padding:4px;background:#16162a;border-radius:6px">
+        ${customRow}
         ${dropdownContent}
       </div>
       ${this.statusRowHtml()}
@@ -512,6 +527,31 @@ export class ReaderTooltip {
         this.ddOpen = !this.ddOpen
         body.style.display = this.ddOpen ? 'block' : 'none'
         arrow.style.transform = this.ddOpen ? 'rotate(90deg)' : 'rotate(0deg)'
+      })
+    }
+
+    const customInput = this.tooltip.querySelector('.ci-dd-custom') as HTMLInputElement | null
+    if (customInput) {
+      customInput.value = prevDraft
+      const applyCustom = () => {
+        const val = customInput.value.trim()
+        if (!val) return
+        const current = this.tooltip?.querySelector('.ci-dd-current')
+        if (current) current.textContent = val
+        this.pickedTranslation = val
+        if (this.activeLemma) this.statusApi.setTranslation(this.activeLemma, val)
+        this.ddOpen = false
+        if (body) body.style.display = 'none'
+        if (arrow) arrow.style.transform = 'rotate(0deg)'
+      }
+      customInput.addEventListener('click', (e) => e.stopPropagation())
+      customInput.addEventListener('keydown', (e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') applyCustom()
+      })
+      this.tooltip.querySelector('.ci-dd-custom-save')?.addEventListener('click', (e) => {
+        e.stopPropagation()
+        applyCustom()
       })
     }
 
