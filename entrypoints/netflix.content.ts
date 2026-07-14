@@ -30,6 +30,14 @@ const STYLE = `
 #znam-nf-badge:hover { background: #242440; }
 #znam-nf-badge.on { background: #2d6e3e; }
 #znam-nf-badge .znam-nf-sub { display: block; color: #9ab; font-weight: 400; font-size: 11px; margin-top: 2px; }
+#znam-nf-prescan {
+  position: fixed; left: 200px; bottom: 16px; z-index: 2147483000;
+  background: #1a1a2e; color: #cfe3ff; border-radius: 12px;
+  padding: 6px 12px; font: 600 12px/1.4 "Roboto", sans-serif;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5); cursor: pointer; user-select: none;
+}
+#znam-nf-prescan:hover { background: #242440; }
+#znam-nf-prescan.on { background: #7a4a12; }
 #ci-sub-panel {
   position: fixed; left: 16px; right: 16px; bottom: 64px; z-index: 2147483000;
   max-width: 900px; margin: 0 auto;
@@ -194,7 +202,8 @@ export default defineContentScript({
     let panelRaf = 0
     let autoPause = false
     let lastPauseCue = -1
-    const nativeCache = new Map<number, string>()
+    // Keyed by cue text, not index — sorted insertion shifts indexes.
+    const nativeCache = new Map<string, string>()
 
     function cueIndexAt(t: number): number {
       let idx = -1
@@ -203,6 +212,49 @@ export default defineContentScript({
         else break
       }
       return idx
+    }
+
+    // ── Persistent cue cache ────────────────────────────────
+    // Everything ever transcribed for a title is stored, so a re-watch (or a
+    // 1.5× pre-scan pass, see below) has every subtitle available instantly
+    // and exactly on time — the live path's only weakness is that a cue can't
+    // exist before its audio has been heard and transcribed.
+
+    let cueSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+    function cueStoreKey(): string {
+      return `nfCues:${urlId(location.href)}`
+    }
+
+    /** Insert keeping activeCues sorted by start; drop duplicates from
+     *  re-transcribing an already-cached region (same text, overlapping time). */
+    function addCue(cue: SubtitleCue): void {
+      for (const c of activeCues) {
+        if (c.text === cue.text && Math.abs(c.start - cue.start) < 2) return
+      }
+      let i = activeCues.length
+      while (i > 0 && activeCues[i - 1].start > cue.start) i--
+      activeCues.splice(i, 0, cue)
+      if (i <= panelCueIndex) panelCueIndex++
+      scheduleCueSave()
+    }
+
+    function scheduleCueSave(): void {
+      if (cueSaveTimer) return
+      cueSaveTimer = setTimeout(() => {
+        cueSaveTimer = null
+        browser.storage.local.set({ [cueStoreKey()]: activeCues }).catch(() => {})
+      }, 3000)
+    }
+
+    async function loadCachedCues(): Promise<void> {
+      const key = cueStoreKey()
+      const stored = await browser.storage.local.get(key).catch(() => ({}) as Record<string, unknown>)
+      const cues = (stored as Record<string, SubtitleCue[]>)[key]
+      if (!Array.isArray(cues) || cues.length === 0) return
+      activeCues.push(...cues)
+      console.log('[znam ASR] loaded', cues.length, 'cached cues for this title')
+      ensurePanel()
     }
 
     function ensurePanel(): HTMLElement {
@@ -220,10 +272,24 @@ export default defineContentScript({
           <button class="ci-playpause" title="Play / pause">⏯</button>
           <button class="ci-next" title="Next line">⏭</button>
           <button class="ci-autopause" title="Pause at the end of every line">⏸ Auto-pause</button>
+          <button class="ci-dualsub" title="Show/hide the translation line (dual sub)">🌐 ${settings.nativeLanguage.toUpperCase()}</button>
           <span class="ci-sub-spacer"></span>
           <span class="ci-sub-hint">click = look up · shift-click = phrase · znam-transcribed, not Netflix's own subtitles</span>
         </div>`
       document.body.appendChild(panel)
+      const dualBtn = panel.querySelector('.ci-dualsub') as HTMLElement
+      const nativeEl = panel.querySelector('.ci-sub-native') as HTMLElement
+      const applyDualSub = () => {
+        dualBtn.classList.toggle('active', settings.netflixShowNative)
+        nativeEl.style.display = settings.netflixShowNative ? '' : 'none'
+      }
+      applyDualSub()
+      dualBtn.addEventListener('click', async () => {
+        settings = { ...settings, netflixShowNative: !settings.netflixShowNative }
+        applyDualSub()
+        if (settings.netflixShowNative && panelCueIndex >= 0) renderPanelCue(panelCueIndex)
+        await saveSettings(settings)
+      })
       panel.querySelector('.ci-prev')!.addEventListener('click', () => seekCue(panelCueIndex - 1))
       panel.querySelector('.ci-replay')!.addEventListener('click', () => seekCue(panelCueIndex))
       panel.querySelector('.ci-next')!.addEventListener('click', () => seekCue(panelCueIndex + 1))
@@ -303,16 +369,20 @@ export default defineContentScript({
         if (panelCueIndex === index) for (const s of spans) if (s.isConnected) paintSpan(s)
       }
 
-      if (nativeCache.has(index)) {
-        native.textContent = nativeCache.get(index)!
+      if (!settings.netflixShowNative) {
+        native.textContent = ''
+        return
+      }
+      if (nativeCache.has(cue.text)) {
+        native.textContent = nativeCache.get(cue.text)!
       } else {
         native.textContent = '…'
         const r = await send({
           type: 'TRANSLATE', payload: { text: cue.text, from: settings.targetLanguage, to: settings.nativeLanguage },
         }).catch(() => null)
         const translated = (r && typeof r === 'object' ? r.text : '') || ''
-        nativeCache.set(index, translated)
-        if (panelCueIndex === index) native.textContent = translated
+        nativeCache.set(cue.text, translated)
+        if (panelCueIndex === index && settings.netflixShowNative) native.textContent = translated
       }
     }
 
@@ -423,7 +493,7 @@ export default defineContentScript({
         progressEl.hidden = true
         setBadgeSub(`transcribing (${event.tier}${event.model ? ' · ' + event.model : ''})`)
       } else if (event.type === 'SEGMENT') {
-        activeCues.push(event.cue)
+        addCue(event.cue)
         accumulateForLibrary(event.cue.text)
         ensurePanel()
       } else if (event.type === 'ERROR') {
@@ -446,14 +516,15 @@ export default defineContentScript({
     async function startCaptureWith(deviceId: string) {
       const result: CaptureStartResult = await capture.start(
         deviceId,
-        (pcm, startTime) => {
+        (pcm, startTime, rate) => {
           // Always a plain ArrayBuffer here — pcm comes from a fresh
           // Float32Array (see AudioCapture.emitWindow), never SharedArrayBuffer.
           const buf = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength) as ArrayBuffer
-          const req: AsrRequest = { type: 'ASR_CHUNK', seq: seq++, pcm: buf, startTime }
+          const req: AsrRequest = { type: 'ASR_CHUNK', seq: seq++, pcm: buf, startTime, rate }
           ensureAsrPort().postMessage(req)
         },
         () => video()?.currentTime ?? 0,
+        () => video()?.playbackRate ?? 1,
       )
       console.log('[znam ASR] capture.start result=', result)
       if (result === 'denied') {
@@ -479,6 +550,7 @@ export default defineContentScript({
 
     function stopTranscribing() {
       transcribing = false
+      stopPrescan()
       capture.stop()
       badge.classList.remove('on')
       badge.firstChild!.textContent = '🎙️ Transcribe audio'
@@ -558,6 +630,50 @@ export default defineContentScript({
       openDevicePicker()
     })
 
+    // ── Pre-scan pass ───────────────────────────────────────
+    // The live path can't show a cue before its audio has been spoken —
+    // faster-than-realtime transcription is impossible with DRM audio (the
+    // virtual cable only carries what actually plays). The pre-scan pass is
+    // the practical workaround: play at 1.5× (Netflix's own supported max;
+    // pitch is preserved, Whisper copes fine) while transcribing, cues land
+    // in the persistent cache, then re-watch with every subtitle already in
+    // place and exact to the second.
+
+    const PRESCAN_RATE = 1.5
+    let prescan = false
+    let prescanTimer: ReturnType<typeof setInterval> | null = null
+
+    const prescanBtn = document.createElement('div')
+    prescanBtn.id = 'znam-nf-prescan'
+    prescanBtn.textContent = '⏩ Pre-scan 1.5×'
+    prescanBtn.title = 'Play at 1.5× while transcribing everything into the cache, then rewind and watch with exact subtitles'
+    document.body.appendChild(prescanBtn)
+
+    function stopPrescan() {
+      prescan = false
+      prescanBtn.classList.remove('on')
+      if (prescanTimer) { clearInterval(prescanTimer); prescanTimer = null }
+      const v = video()
+      if (v) v.playbackRate = 1
+    }
+
+    prescanBtn.addEventListener('click', () => {
+      if (prescan) { stopPrescan(); return }
+      prescan = true
+      prescanBtn.classList.add('on')
+      if (!transcribing) {
+        if (settings.netflixAudioDeviceId) startCaptureWith(settings.netflixAudioDeviceId)
+        else { stopPrescan(); openDevicePicker(); return }
+      }
+      // Netflix's player occasionally resets playbackRate — re-assert it.
+      prescanTimer = setInterval(() => {
+        const v = video()
+        if (!v) return
+        if (v.playbackRate !== PRESCAN_RATE) v.playbackRate = PRESCAN_RATE
+        if (v.ended) stopPrescan()
+      }, 1000)
+    })
+
     // ── Navigation (Netflix is a pushState SPA; poll the URL) ──
 
     let lastHref = location.href
@@ -567,6 +683,7 @@ export default defineContentScript({
       // New title/episode: stop the old session cleanly.
       stopTranscribing()
       removePanel()
+      if (cueSaveTimer) { clearTimeout(cueSaveTimer); cueSaveTimer = null }
       activeCues.length = 0
       tokenInfo.clear()
       lemmaStatus.clear()
@@ -574,7 +691,12 @@ export default defineContentScript({
       libraryLemmaCounts = {}
       nativeCache.clear()
       seq = 0
+      loadCachedCues()
     }, 1000)
+
+    // Cached cues from an earlier session/pre-scan of this title appear
+    // immediately, no transcription needed.
+    loadCachedCues()
 
     window.addEventListener('pagehide', () => {
       stopTranscribing()

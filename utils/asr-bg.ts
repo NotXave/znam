@@ -34,7 +34,7 @@ export function handleAsrPort(port: any): void {
   let running = false
   let processing = false
   let serverFallbackWarned = false
-  const queue: { seq: number; pcm: Float32Array; startTime: number }[] = []
+  const queue: { seq: number; pcm: Float32Array; startTime: number; rate: number }[] = []
 
   function queuedSeconds(): number {
     return queue.reduce((s, c) => s + c.pcm.length / 16000, 0)
@@ -83,9 +83,12 @@ export function handleAsrPort(port: any): void {
         try {
           const segments = await runInference(chunk.pcm)
           for (const seg of segments) {
+            // Segment offsets are audio-seconds; scale by the playback rate
+            // the window was captured at to land on the video clock (the
+            // 1.5× pre-scan pass compresses 12s of video into 8s of audio).
             const cue: SubtitleCue = {
-              start: chunk.startTime + seg.start,
-              end: chunk.startTime + seg.end,
+              start: chunk.startTime + seg.start * chunk.rate,
+              end: chunk.startTime + seg.end * chunk.rate,
               text: seg.text,
             }
             post({ type: 'SEGMENT', seq: chunk.seq, cue })
@@ -137,7 +140,7 @@ export function handleAsrPort(port: any): void {
       }
     } else if (msg.type === 'ASR_CHUNK') {
       if (!running) return
-      queue.push({ seq: msg.seq, pcm: new Float32Array(msg.pcm), startTime: msg.startTime })
+      queue.push({ seq: msg.seq, pcm: new Float32Array(msg.pcm), startTime: msg.startTime, rate: msg.rate || 1 })
       while (queuedSeconds() > MAX_BACKLOG_SEC && queue.length > 1) {
         queue.shift()
         post({ type: 'ERROR', error: 'falling behind — dropped audio to catch up', fatal: false })

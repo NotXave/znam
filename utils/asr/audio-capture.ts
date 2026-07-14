@@ -12,7 +12,10 @@
 // screen/tab sharing). One-time setup, no per-session share dialog — once
 // mic permission is granted for netflix.com it persists.
 
-export type ChunkHandler = (pcm: Float32Array, startTime: number) => void
+/** rate = video playbackRate while this window was captured; at 1.5× (the
+ *  pre-scan pass) 8s of audio spans 12s of video time, so segment offsets
+ *  must be scaled by it when mapped back onto the video clock. */
+export type ChunkHandler = (pcm: Float32Array, startTime: number, rate: number) => void
 export type CaptureStartResult = 'ok' | 'denied' | 'no-device' | 'error'
 
 const SAMPLE_RATE = 16000
@@ -64,6 +67,7 @@ export class AudioCapture {
   private bufferedSamples = 0
   private windowStartVideoTime = 0
   private getVideoTime: () => number = () => 0
+  private getRate: () => number = () => 1
   private onChunk: ChunkHandler = () => {}
   // Rate the AudioContext actually runs at — 16kHz on success, or the
   // hardware-native rate (usually 48kHz) if Firefox rejected the 16kHz
@@ -81,10 +85,16 @@ export class AudioCapture {
     return this.stream != null
   }
 
-  async start(deviceId: string, onChunk: ChunkHandler, getVideoTime: () => number): Promise<CaptureStartResult> {
+  async start(
+    deviceId: string,
+    onChunk: ChunkHandler,
+    getVideoTime: () => number,
+    getRate: () => number = () => 1,
+  ): Promise<CaptureStartResult> {
     if (this.active) return 'ok'
     this.onChunk = onChunk
     this.getVideoTime = getVideoTime
+    this.getRate = getRate
 
     let stream: MediaStream
     try {
@@ -183,7 +193,7 @@ export class AudioCapture {
     if (rms >= 0.0015) {
       this.silentWindows = 0
       this.silenceWarned = false
-      this.onChunk(win, this.windowStartVideoTime)
+      this.onChunk(win, this.windowStartVideoTime, this.getRate())
     } else {
       console.log('[znam ASR] skipping silent window (rms', rms.toFixed(5) + ')')
       this.silentWindows++
@@ -201,7 +211,8 @@ export class AudioCapture {
 
     // Resync against the real video clock each window rather than only
     // extrapolating forward — keeps drift bounded across pause/seek/buffering.
-    this.windowStartVideoTime = this.getVideoTime() - this.bufferedSamples / SAMPLE_RATE
+    // Buffered audio-seconds × playbackRate = video-seconds they represent.
+    this.windowStartVideoTime = this.getVideoTime() - (this.bufferedSamples / SAMPLE_RATE) * this.getRate()
   }
 
   /** Tears down the audio graph and stops every track. */

@@ -115,6 +115,8 @@ export interface Settings {
   /** Audio input device to capture (a virtual cable — Firefox's getDisplayMedia
    *  ignores audio entirely, see utils/asr/audio-capture.ts). '' = default mic. */
   netflixAudioDeviceId: string
+  /** Dual sub: show the native-language translation line under each cue. */
+  netflixShowNative: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -136,6 +138,7 @@ export const DEFAULT_SETTINGS: Settings = {
   netflixCloudApiKey: '',
   netflixSubtitleMode: 'replace',
   netflixAudioDeviceId: '',
+  netflixShowNative: true,
 }
 
 // ── Lookup results (reused from manga-translator) ───────────
@@ -208,7 +211,7 @@ export type OcrEvent =
 export type AsrRequest =
   | { type: 'ASR_START'; lang: string }
   /** pcm = mono Float32 samples at 16kHz, as raw bytes. */
-  | { type: 'ASR_CHUNK'; seq: number; pcm: ArrayBuffer; startTime: number }
+  | { type: 'ASR_CHUNK'; seq: number; pcm: ArrayBuffer; startTime: number; rate: number }
   | { type: 'ASR_STOP' }
 
 /**
