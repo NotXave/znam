@@ -64,9 +64,26 @@ function bar(label: string, value: number, max: number, color: string): string {
   </div>`
 }
 
+interface DeepStats {
+  growth: { t: number; total: number }[]
+  activity: Record<string, number>
+  freqCoverage: { band: number; known: number; learning: number; total: number }[]
+  hardest: { lemma: string; translation: string; lookups: number; status: string; level?: number }[]
+  sources: Record<string, number>
+  knownThisMonth: number
+  totalLookups: number
+  streak: number
+  scoreHistory: { t: number; score: number; kind: 'page' | 'youtube' | 'netflix' }[]
+  weeklyReading: { week: string; page: number; youtube: number; netflix: number }[]
+}
+
 async function renderStats() {
-  const s: Stats = await send({ type: 'GET_STATS', payload: { lang } })
+  const [s, d]: [Stats, DeepStats] = await Promise.all([
+    send({ type: 'GET_STATS', payload: { lang } }),
+    send({ type: 'GET_DEEP_STATS', payload: { lang } }),
+  ])
   if (!s || (s as any).error) return
+  if (d && !(d as any).error) renderDeepStats(d, s)
 
   document.getElementById('stats-tiles')!.innerHTML =
     tile(s.counts.known.toLocaleString(), 'Words known') +
@@ -135,6 +152,256 @@ function renderComprehensionCard(
         <span class="bar-num">${stat.count}/${stat.unlockAt}</span>
       </div>
       <div class="hint">${unlockHint}</div>`
+  }
+}
+
+// ── Stats deep-dive ─────────────────────────────────────────
+// Vanilla inline-SVG charts on the app's dark cards (#1a1a2e). Colors:
+// categorical kind trio (page/youtube/netflix) and the status pair
+// (known/learning) validated against the card surface; text stays in text
+// tokens, marks carry the color.
+
+const KIND_COLORS: Record<string, string> = { page: '#3987e5', youtube: '#e66767', netflix: '#9085e9' }
+const KIND_LABELS: Record<string, string> = { page: 'Pages', youtube: 'YouTube', netflix: 'Netflix' }
+const KNOWN_C = '#5d9e4a'
+const LEARNING_C = '#b8a12e'
+const GRID_C = '#2a2a44'
+const MUTED_C = '#8a8aa0'
+const SURFACE_C = '#1a1a2e'
+const ACCENT_C = '#3987e5'
+const HEAT_RAMP = ['#23233c', '#1c5cab', '#2a78d6', '#5598e7', '#9ec5f4']
+
+const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+const fmtDay = (t: number) => new Date(t).toISOString().slice(0, 10)
+const fmtShort = (t: number) => {
+  const d = new Date(t)
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+function legendRow(items: [string, string][]): string {
+  return `<div class="legend-row">${items
+    .map(([color, label]) => `<span class="legend-item"><span class="legend-swatch" style="background:${color}"></span>${esc(label)}</span>`)
+    .join('')}</div>`
+}
+
+/** Cumulative vocabulary growth — single-series area chart with hover. */
+function renderGrowthChart(el: HTMLElement, growth: { t: number; total: number }[]) {
+  if (growth.length < 2) {
+    el.innerHTML = `<p class="hint">Not enough history yet — keep reading; this fills in as you track words.</p>`
+    return
+  }
+  const W = 640, H = 170, L = 46, R = 60, T = 14, B = 24
+  const t0 = growth[0].t, t1 = growth[growth.length - 1].t
+  const yMax = Math.max(10, growth[growth.length - 1].total)
+  const xf = (t: number) => L + ((t - t0) / Math.max(1, t1 - t0)) * (W - L - R)
+  const yf = (v: number) => T + (1 - v / yMax) * (H - T - B)
+  const pts = growth.map(g => `${xf(g.t).toFixed(1)},${yf(g.total).toFixed(1)}`)
+  const line = `M${pts.join(' L')}`
+  const area = `${line} L${xf(t1).toFixed(1)},${yf(0)} L${xf(t0).toFixed(1)},${yf(0)} Z`
+  const yTicks = [0, Math.round(yMax / 2), yMax]
+  const months: { x: number; label: string }[] = []
+  const span = t1 - t0
+  for (let i = 0; i <= 3; i++) {
+    const t = t0 + (span * i) / 3
+    months.push({ x: xf(t), label: fmtShort(t) })
+  }
+  const last = growth[growth.length - 1]
+  el.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" class="viz" role="img" aria-label="Cumulative tracked words over time">
+      ${yTicks.map(v => `<line x1="${L}" x2="${W - R}" y1="${yf(v)}" y2="${yf(v)}" stroke="${GRID_C}" stroke-width="1"/>
+        <text x="${L - 6}" y="${yf(v) + 4}" text-anchor="end" class="viz-tick">${v.toLocaleString()}</text>`).join('')}
+      ${months.map(m => `<text x="${m.x}" y="${H - 6}" text-anchor="middle" class="viz-tick">${m.label}</text>`).join('')}
+      <path d="${area}" fill="${ACCENT_C}" opacity="0.1"/>
+      <path d="${line}" fill="none" stroke="${ACCENT_C}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${xf(last.t)}" cy="${yf(last.total)}" r="4.5" fill="${ACCENT_C}" stroke="${SURFACE_C}" stroke-width="2"/>
+      <text x="${xf(last.t) + 8}" y="${yf(last.total) + 4}" class="viz-label">${last.total.toLocaleString()}</text>
+      <circle class="viz-hover-dot" r="4.5" fill="${ACCENT_C}" stroke="${SURFACE_C}" stroke-width="2" style="display:none"/>
+      <rect class="viz-hover-zone" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/>
+    </svg>`
+  const svg = el.querySelector('svg')!
+  const dot = svg.querySelector('.viz-hover-dot') as SVGCircleElement
+  const zone = svg.querySelector('.viz-hover-zone')!
+  const tip = ensureVizTip()
+  zone.addEventListener('mousemove', (e: Event) => {
+    const me = e as MouseEvent
+    const rect = svg.getBoundingClientRect()
+    const mx = ((me.clientX - rect.left) / rect.width) * W
+    let best = growth[0], bd = Infinity
+    for (const g of growth) { const dd = Math.abs(xf(g.t) - mx); if (dd < bd) { bd = dd; best = g } }
+    dot.style.display = ''
+    dot.setAttribute('cx', String(xf(best.t)))
+    dot.setAttribute('cy', String(yf(best.total)))
+    tip.style.display = 'block'
+    tip.style.left = `${me.clientX + 12}px`
+    tip.style.top = `${me.clientY - 10}px`
+    tip.textContent = `${fmtDay(best.t)} — ${best.total.toLocaleString()} words`
+  })
+  zone.addEventListener('mouseleave', () => { dot.style.display = 'none'; ensureVizTip().style.display = 'none' })
+}
+
+let vizTip: HTMLElement | null = null
+function ensureVizTip(): HTMLElement {
+  if (vizTip?.isConnected) return vizTip
+  vizTip = document.createElement('div')
+  vizTip.className = 'viz-tip'
+  document.body.appendChild(vizTip)
+  return vizTip
+}
+
+/** GitHub-style activity heatmap: weeks × weekdays, sequential blue ramp. */
+function renderHeatmap(el: HTMLElement, activity: Record<string, number>) {
+  const DAY = 86400000
+  const today = new Date(); today.setHours(12, 0, 0, 0)
+  const weeks = 18
+  // Align the grid so the last column ends on today's week (Mon-first rows).
+  const dow = (today.getDay() + 6) % 7 // 0 = Monday
+  const start = today.getTime() - (weeks * 7 - (6 - dow) - 1) * DAY
+  const values = Object.values(activity).filter(v => v > 0).sort((a, b) => a - b)
+  const q = (f: number) => values.length ? values[Math.min(values.length - 1, Math.floor(values.length * f))] : 1
+  const thresholds = [1, Math.max(2, q(0.5)), Math.max(3, q(0.75)), Math.max(4, q(0.9))]
+  const cellFor = (v: number) => v <= 0 ? HEAT_RAMP[0] : v < thresholds[1] ? HEAT_RAMP[1] : v < thresholds[2] ? HEAT_RAMP[2] : v < thresholds[3] ? HEAT_RAMP[3] : HEAT_RAMP[4]
+  const cell = 12, gap = 3
+  const W = weeks * (cell + gap) + 30, H = 7 * (cell + gap) + 18
+  let cells = ''
+  for (let w = 0; w < weeks; w++) {
+    for (let r = 0; r < 7; r++) {
+      const t = start + (w * 7 + r) * DAY
+      if (t > today.getTime()) continue
+      const key = new Date(t).toISOString().slice(0, 10)
+      const v = activity[key] || 0
+      cells += `<rect x="${30 + w * (cell + gap)}" y="${r * (cell + gap)}" width="${cell}" height="${cell}" rx="2" fill="${cellFor(v)}"><title>${key}: ${v} word ${v === 1 ? 'event' : 'events'}</title></rect>`
+    }
+  }
+  const dayLabels = [['Mon', 0], ['Wed', 2], ['Fri', 4]] as [string, number][]
+  el.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" class="viz" style="max-width:${W}px" role="img" aria-label="Daily activity heatmap">
+      ${dayLabels.map(([l, r]) => `<text x="0" y="${r * (cell + gap) + 10}" class="viz-tick">${l}</text>`).join('')}
+      ${cells}
+    </svg>
+    <div class="legend-row" style="justify-content:flex-end">less
+      ${HEAT_RAMP.map(c => `<span class="legend-swatch" style="background:${c}"></span>`).join('')} more
+    </div>`
+}
+
+/** Frequency-coverage stacked bars: known + learning share of each top-N band. */
+function renderFreqCoverage(el: HTMLElement, cov: DeepStats['freqCoverage']) {
+  if (!cov.length) {
+    el.innerHTML = `<p class="hint">No frequency list for this language yet — run language setup to download one.</p>`
+    return
+  }
+  el.innerHTML = cov.map(({ band, known, learning, total }) => {
+    const kp = (known / total) * 100
+    const lp = (learning / total) * 100
+    return `<div class="bar-row">
+      <span class="bar-label">Top ${band.toLocaleString()}</span>
+      <span class="bar-track freq-track" title="Top ${band.toLocaleString()}: ${known.toLocaleString()} known, ${learning.toLocaleString()} learning, ${(total - known - learning).toLocaleString()} untracked">
+        <span class="bar-fill" style="width:${kp}%;background:${KNOWN_C}"></span>
+        <span class="bar-fill" style="width:${lp}%;background:${LEARNING_C};margin-left:2px"></span>
+      </span>
+      <span class="bar-num">${Math.round(kp)}%</span>
+    </div>`
+  }).join('') + legendRow([[KNOWN_C, 'Known'], [LEARNING_C, 'Learning'], [GRID_C, 'Untracked']])
+}
+
+/** Comprehension scatter: one dot per library item, colored by kind. */
+function renderScoreHistory(el: HTMLElement, hist: DeepStats['scoreHistory']) {
+  if (hist.length < 3) {
+    el.innerHTML = `<p class="hint">Read or watch a few more things — each one becomes a dot here.</p>`
+    return
+  }
+  const W = 640, H = 190, L = 40, R = 70, T = 12, B = 24
+  const t0 = hist[0].t, t1 = Date.now()
+  const xf = (t: number) => L + ((t - t0) / Math.max(1, t1 - t0)) * (W - L - R)
+  const yf = (score: number) => T + (1 - score) * (H - T - B)
+  const kinds = [...new Set(hist.map(h => h.kind))]
+  const xt: string[] = []
+  for (let i = 0; i <= 3; i++) {
+    const t = t0 + ((t1 - t0) * i) / 3
+    xt.push(`<text x="${xf(t)}" y="${H - 6}" text-anchor="middle" class="viz-tick">${fmtShort(t)}</text>`)
+  }
+  el.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" class="viz" role="img" aria-label="Comprehension score of each item over time">
+      <rect x="${L}" y="${yf(0.98)}" width="${W - L - R}" height="${yf(0.9) - yf(0.98)}" fill="${KNOWN_C}" opacity="0.08"/>
+      <text x="${W - R + 6}" y="${yf(0.94) + 4}" class="viz-tick">sweet spot</text>
+      ${[0.5, 0.75, 1].map(v => `<line x1="${L}" x2="${W - R}" y1="${yf(v)}" y2="${yf(v)}" stroke="${GRID_C}" stroke-width="1"/>
+        <text x="${L - 6}" y="${yf(v) + 4}" text-anchor="end" class="viz-tick">${Math.round(v * 100)}%</text>`).join('')}
+      ${xt.join('')}
+      ${hist.map(h => `<circle cx="${xf(h.t).toFixed(1)}" cy="${yf(h.score).toFixed(1)}" r="4" fill="${KIND_COLORS[h.kind]}" stroke="${SURFACE_C}" stroke-width="2"><title>${fmtDay(h.t)} — ${Math.round(h.score * 100)}% (${KIND_LABELS[h.kind]})</title></circle>`).join('')}
+    </svg>
+    ${legendRow(kinds.map(k => [KIND_COLORS[k], KIND_LABELS[k]] as [string, string]))}`
+}
+
+/** Weekly reading/watching volume — stacked columns by kind. */
+function renderVolume(el: HTMLElement, weeks: DeepStats['weeklyReading']) {
+  const W = 640, H = 160, L = 34, R = 10, T = 10, B = 24
+  const totals = weeks.map(w => w.page + w.youtube + w.netflix)
+  const max = Math.max(1, ...totals)
+  const slot = (W - L - R) / weeks.length
+  const bw = Math.min(24, slot - 8)
+  const yf = (v: number) => T + (1 - v / max) * (H - T - B)
+  let bars = ''
+  weeks.forEach((w, i) => {
+    const x = L + i * slot + (slot - bw) / 2
+    let acc = 0
+    for (const kind of ['page', 'youtube', 'netflix'] as const) {
+      const v = w[kind]
+      if (!v) continue
+      const y1 = yf(acc), y0 = yf(acc + v)
+      const isTop = acc + v === totals[i]
+      bars += `<rect x="${x.toFixed(1)}" y="${(y0 + (isTop ? 0 : 1)).toFixed(1)}" width="${bw}" height="${Math.max(1, y1 - y0 - (isTop ? 0 : 2)).toFixed(1)}" fill="${KIND_COLORS[kind]}" ${isTop ? 'rx="3"' : ''}><title>Week of ${w.week}: ${v} ${KIND_LABELS[kind]}</title></rect>`
+      acc += v
+    }
+    if (i % 2 === 0) bars += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="viz-tick">${w.week}</text>`
+  })
+  const yTicks = [0, Math.ceil(max / 2), max]
+  el.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" class="viz" role="img" aria-label="Items read or watched per week">
+      ${yTicks.map(v => `<line x1="${L}" x2="${W - R}" y1="${yf(v)}" y2="${yf(v)}" stroke="${GRID_C}" stroke-width="1"/>
+        <text x="${L - 6}" y="${yf(v) + 4}" text-anchor="end" class="viz-tick">${v}</text>`).join('')}
+      ${bars}
+    </svg>
+    ${legendRow([[KIND_COLORS.page, 'Pages'], [KIND_COLORS.youtube, 'YouTube'], [KIND_COLORS.netflix, 'Netflix']])}`
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  'click': 'Clicked while reading',
+  'page-read': 'Auto-tracked from pages',
+  'calibration': 'Calibration',
+  'import': 'Imported',
+  'manual': 'Manual',
+}
+
+function renderDeepStats(d: DeepStats, s: Stats) {
+  document.getElementById('stats-tiles2')!.innerHTML =
+    tile(d.streak ? `🔥 ${d.streak}` : '0', 'Day streak') +
+    tile('+' + d.knownThisMonth.toLocaleString(), 'Marked known (30 days)') +
+    tile(d.totalLookups.toLocaleString(), 'Total lookups') +
+    tile(s.library.total.toLocaleString(), 'Items in library')
+
+  renderGrowthChart(document.getElementById('stats-growth')!, d.growth)
+  renderFreqCoverage(document.getElementById('stats-freq')!, d.freqCoverage)
+  renderHeatmap(document.getElementById('stats-heatmap')!, d.activity)
+  renderScoreHistory(document.getElementById('stats-scores')!, d.scoreHistory)
+  renderVolume(document.getElementById('stats-volume')!, d.weeklyReading)
+
+  const srcMax = Math.max(1, ...Object.values(d.sources))
+  document.getElementById('stats-sources')!.innerHTML = Object.entries(d.sources)
+    .sort((a, b) => b[1] - a[1])
+    .map(([src, n]) => bar(SOURCE_LABELS[src] || src, n, srcMax, ACCENT_C))
+    .join('')
+
+  const hardestEl = document.getElementById('stats-hardest')!
+  if (d.hardest.length === 0) {
+    hardestEl.innerHTML = `<p class="hint">Nothing yet — words you look up repeatedly will surface here.</p>`
+  } else {
+    hardestEl.innerHTML = `<table class="hardest-table">
+      ${d.hardest.map(h => {
+        const chip = h.status === 'known'
+          ? `<span class="hw-chip" style="background:${KNOWN_C}">known</span>`
+          : `<span class="hw-chip" style="background:${LEVEL_COLORS[(h.level ?? 1) - 1]}">stage ${h.level ?? 1}</span>`
+        return `<tr><td class="hw-lemma">${esc(h.lemma)}</td><td class="hw-tr">${esc(h.translation)}</td><td>${chip}</td><td class="hw-n">${h.lookups}×</td></tr>`
+      }).join('')}
+    </table>`
   }
 }
 

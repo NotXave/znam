@@ -256,6 +256,7 @@ export type Message =
   /** Learning words seen while reading (not looked up) → advance toward next level. */
   | { type: 'RECORD_EXPOSURES'; payload: { lang: string; lemmas: string[] } }
   | { type: 'GET_STATS'; payload: { lang: string } }
+  | { type: 'GET_DEEP_STATS'; payload: { lang: string } }
   | { type: 'MARK_PAGE_READ'; payload: { lang: string; lemmas: string[] } }
   | { type: 'SAVE_LIBRARY_ENTRY'; payload: Omit<LibraryEntry, 'createdAt' | 'updatedAt'> }
   | { type: 'GET_LIBRARY'; payload: { lang?: string } }

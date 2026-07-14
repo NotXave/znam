@@ -20,7 +20,7 @@ import {
 } from '../utils/db'
 import { handleSetupPort, languageState, setCalibratedAt } from '../utils/language-setup'
 import { calibrationLemmas, calibrationSample, estimateKnownRank } from '../utils/calibration'
-import { getFreqRanks, getVideoScores, putVideoScore } from '../utils/db'
+import { countFreqRows, getFreqRanks, getVideoScores, putVideoScore } from '../utils/db'
 import { rescoreLemmaCounts, scoreTokens } from '../utils/scoring'
 import { tokenize } from '../utils/tokenizer'
 import { fetchCaptionText, fetchVideoInfo, pickTrack } from '../utils/youtube-captions'
@@ -209,6 +209,118 @@ async function computeStats(lang: string) {
       sweetSpot,
       avgScore,
     },
+  }
+}
+
+/**
+ * Everything the Stats deep-dive needs beyond computeStats(), in one round
+ * trip. All series are derived from data that already exists (WordRecord
+ * timestamps/lookups, library entries, the frequency table) — nothing here
+ * invents history that wasn't recorded.
+ */
+async function computeDeepStats(lang: string) {
+  const words = await getAllWords(lang)
+  const library = await getLibrary(lang)
+  const now = Date.now()
+  const DAY = 86400000
+
+  // Vocabulary growth: cumulative known+learning words by first-tracked date,
+  // downsampled to ≤120 points for the chart.
+  const tracked = words.filter(w => w.status === 'known' || w.status === 'learning')
+  const created = tracked.map(w => w.createdAt).sort((a, b) => a - b)
+  const growth: { t: number; total: number }[] = []
+  const step = Math.max(1, Math.ceil(created.length / 120))
+  for (let i = 0; i < created.length; i++) {
+    if (i % step === 0 || i === created.length - 1) growth.push({ t: created[i], total: i + 1 })
+  }
+
+  // Daily activity (last ~18 weeks): word events — first tracked, plus a
+  // later touch (status/level change, lookup) when it happened on another day.
+  const activity: Record<string, number> = {}
+  const bump = (t: number) => {
+    if (now - t >= 126 * DAY) return
+    const d = new Date(t).toISOString().slice(0, 10)
+    activity[d] = (activity[d] || 0) + 1
+  }
+  for (const w of words) {
+    bump(w.createdAt)
+    if (w.updatedAt - w.createdAt > DAY) bump(w.updatedAt)
+  }
+
+  // Frequency coverage: how much of the top-N most frequent lemmas is known /
+  // being learned. Requires the language's frequency table (downloaded during
+  // language setup) — freqTotal === 0 means it's absent and the UI skips this.
+  const freqTotal = await countFreqRows(lang)
+  const bands = [100, 250, 500, 1000, 2000, 5000].filter(b => freqTotal >= 100 && b <= Math.max(100, freqTotal))
+  let freqCoverage: { band: number; known: number; learning: number; total: number }[] = []
+  if (bands.length > 0) {
+    const ranks = await getFreqRanks(lang, tracked.map(w => w.lemma))
+    const statusByLemma = new Map(tracked.map(w => [w.lemma, w.status]))
+    freqCoverage = bands.map(band => {
+      let known = 0
+      let learning = 0
+      for (const [lemma, rank] of ranks) {
+        if (rank > band) continue
+        if (statusByLemma.get(lemma) === 'known') known++
+        else learning++
+      }
+      return { band, known, learning, total: Math.min(band, freqTotal) }
+    })
+  }
+
+  // Hardest words: most looked up — the "I keep forgetting this one" list.
+  const hardest = words
+    .filter(w => (w.lookups ?? 0) >= 2)
+    .sort((a, b) => (b.lookups ?? 0) - (a.lookups ?? 0))
+    .slice(0, 12)
+    .map(w => ({ lemma: w.lemma, translation: w.translation || '', lookups: w.lookups ?? 0, status: w.status, level: w.level }))
+
+  const sources: Record<string, number> = {}
+  for (const w of words) sources[w.source] = (sources[w.source] || 0) + 1
+
+  const knownThisMonth = words.filter(w => w.status === 'known' && now - w.updatedAt < 30 * DAY).length
+  const totalLookups = words.reduce((s, w) => s + (w.lookups ?? 0), 0)
+
+  // Streak: consecutive days (ending today or yesterday) with any activity.
+  let streak = 0
+  for (let i = 0; i < 126; i++) {
+    const d = new Date(now - i * DAY).toISOString().slice(0, 10)
+    if (activity[d]) streak++
+    else if (i > 0) break // yesterday-anchored: today may still be empty
+  }
+
+  // Comprehension over time: every library item as (when read, score, kind).
+  const scoreHistory = library
+    .map(e => ({ t: e.updatedAt, score: e.score, kind: e.kind }))
+    .sort((a, b) => a.t - b.t)
+    .slice(-400)
+
+  // Reading volume: items per ISO week for the last 12 weeks, split by kind.
+  const weeklyReading: { week: string; page: number; youtube: number; netflix: number }[] = []
+  for (let i = 11; i >= 0; i--) {
+    const start = now - (i + 1) * 7 * DAY
+    const end = now - i * 7 * DAY
+    const label = new Date(end - 3.5 * 7 * DAY / 7).toISOString().slice(5, 10)
+    const inWeek = library.filter(e => e.updatedAt >= start && e.updatedAt < end)
+    weeklyReading.push({
+      week: label,
+      page: inWeek.filter(e => e.kind === 'page').length,
+      youtube: inWeek.filter(e => e.kind === 'youtube').length,
+      netflix: inWeek.filter(e => e.kind === 'netflix').length,
+    })
+  }
+
+  return {
+    growth,
+    activity,
+    freqCoverage,
+    hardest,
+    sources,
+    knownThisMonth,
+    totalLookups,
+    streak,
+    scoreHistory,
+    weeklyReading,
   }
 }
 
@@ -465,6 +577,8 @@ export default defineBackground(() => {
 
         case 'GET_STATS':
           return await computeStats(message.payload.lang)
+        case 'GET_DEEP_STATS':
+          return await computeDeepStats(message.payload.lang)
 
         case 'MARK_PAGE_READ':
           return await markPageRead(message.payload.lang, message.payload.lemmas)

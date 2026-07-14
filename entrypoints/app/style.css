@@ -183,7 +183,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .bar-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 13px; }
 .bar-row .bar-label { width: 92px; color: #aaa; flex-shrink: 0; }
-.bar-row .bar-track { flex: 1; background: #16162a; border-radius: 4px; height: 16px; overflow: hidden; }
+.bar-row .bar-track { flex: 1; display: flex; background: #16162a; border-radius: 4px; height: 16px; overflow: hidden; }
 .bar-row .bar-fill { height: 100%; border-radius: 4px; }
 .bar-row .bar-num { width: 52px; text-align: right; color: #ccc; flex-shrink: 0; }
 
@@ -201,3 +201,35 @@ button:disabled { opacity: 0.5; cursor: default; }
   min-height: 2px;
 }
 .daily-chart .day:hover { background: #3a5d94; }
+
+/* ── Stats deep-dive ─────────────────────────────────────── */
+
+.viz { width: 100%; height: auto; display: block; }
+.viz .viz-tick { fill: #8a8aa0; font-size: 11px; font-family: sans-serif; }
+.viz .viz-label { fill: #eee; font-size: 12px; font-weight: 600; font-family: sans-serif; }
+
+.viz-tip {
+  position: fixed; z-index: 100; display: none; pointer-events: none;
+  background: #242440; color: #eee; font-size: 12px;
+  padding: 4px 8px; border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+}
+
+.legend-row {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  margin-top: 8px; color: #8a8aa0; font-size: 12px;
+}
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+.freq-track .bar-fill { border-radius: 4px; }
+
+.hardest-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.hardest-table td { padding: 4px 8px 4px 0; border-bottom: 1px solid #23233c; }
+.hardest-table tr:last-child td { border-bottom: 0; }
+.hardest-table .hw-lemma { font-weight: 600; }
+.hardest-table .hw-tr { color: #9ab; }
+.hardest-table .hw-n { text-align: right; color: #8a8aa0; font-variant-numeric: tabular-nums; }
+.hw-chip {
+  font-size: 10px; color: #fff; border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+}
