@@ -13,7 +13,10 @@
     "zip:chrome": "wxt zip",
     "lint:ext": "web-ext lint --source-dir .output/firefox-mv2",
     "sign": "wxt build -b firefox && web-ext sign --source-dir .output/firefox-mv2 --artifacts-dir web-ext-artifacts --channel unlisted",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "test": "node --experimental-strip-types --import ./scripts/test/resolve-ts.mjs --test scripts/test/*.test.ts",
+    "audit:grammar": "node --experimental-strip-types --import ./scripts/test/resolve-ts.mjs scripts/grammar-audit.ts",
+    "build:morph": "node scripts/build-morph-data.mjs pl"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

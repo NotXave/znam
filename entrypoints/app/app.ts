@@ -10,6 +10,7 @@ import { getSettings, saveSettings } from '../../utils/settings'
 import { difficultyLabel, rescoreLemmaCounts } from '../../utils/scoring'
 import { parseVocabFile, wordsToAnki, wordsToCsv, type ParsedVocabFile } from '../../utils/csv-import'
 import type { CalibrationSample } from '../../utils/calibration'
+import { initTrening, renderTrening, setTreningLang } from './trening'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
@@ -31,6 +32,7 @@ const LANGUAGES: [string, string][] = [
 
 const refreshers: Record<string, () => void> = {
   stats: renderStats,
+  trening: () => { void renderTrening() },
   library: renderLibrary,
   words: renderWords,
   languages: renderLanguageState,
@@ -756,8 +758,10 @@ async function init() {
     langSel.appendChild(opt)
   }
   langSel.value = lang
+  setTreningLang(lang)
   langSel.addEventListener('change', async () => {
     lang = langSel.value
+    setTreningLang(lang)
     await saveSettings({ ...(await getSettings()), targetLanguage: lang })
     const activeTab = (document.querySelector('nav button.active') as HTMLElement)?.dataset.tab
     if (activeTab) refreshers[activeTab]?.()
@@ -781,6 +785,11 @@ async function init() {
   document.querySelectorAll('nav button').forEach(b =>
     b.addEventListener('click', () => switchTab((b as HTMLElement).dataset.tab!)),
   )
+
+  initTrening()
+  // Deep link (e.g. the popup's Trening button opens app/index.html#trening).
+  const hash = location.hash.replace('#', '')
+  if (hash && refreshers[hash]) switchTab(hash)
 
   // Refresh the current tab when you come back to this page (e.g. after
   // watching a video in another tab) so scores reflect the words you learned.

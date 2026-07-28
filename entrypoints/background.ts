@@ -20,8 +20,22 @@ import {
   putWords,
 } from '../utils/db'
 import { handleSetupPort, languageState, setCalibratedAt } from '../utils/language-setup'
+import {
+  endGrammarSession,
+  grammarProgress,
+  grammarState,
+  handleGrammarSetupPort,
+  startGrammarSession,
+} from '../utils/grammar-bg'
 import { calibrationLemmas, calibrationSample, estimateKnownRank } from '../utils/calibration'
 import { countFreqRows, getFreqRanks, getVideoScores, putVideoScore } from '../utils/db'
+import {
+  getAllConceptProgressEveryLang,
+  getAllSessionDays,
+  putConceptProgress,
+  putSessionDay,
+} from '../utils/db'
+import type { ConceptProgress, SessionDay } from '../utils/grammar/types'
 import { rescoreLemmaCounts, scoreTokens } from '../utils/scoring'
 import { tokenize } from '../utils/tokenizer'
 import { fetchCaptionText, fetchVideoInfo, pickTrack } from '../utils/youtube-captions'
@@ -499,6 +513,8 @@ export default defineBackground(() => {
         statusMaps.delete(lang)
         statusLoads.delete(lang)
       })
+    } else if (port.name === 'grammar-setup') {
+      handleGrammarSetupPort(port)
     } else if (port.name === 'ocr') {
       handleOcrPort(port)
     } else if (port.name === 'asr') {
@@ -587,6 +603,19 @@ export default defineBackground(() => {
         case 'GET_SETTINGS':
           return await getSettings()
 
+        // ── Grammar game (Trening tab) ──
+        case 'GRAMMAR_STATE':
+          return await grammarState(message.payload.lang)
+
+        case 'GRAMMAR_SESSION_START':
+          return await startGrammarSession(message.payload.lang, message.payload.minutes)
+
+        case 'GRAMMAR_SESSION_END':
+          return await endGrammarSession(message.payload.lang, message.payload.result)
+
+        case 'GRAMMAR_PROGRESS':
+          return await grammarProgress(message.payload.lang)
+
         case 'GET_LANGUAGE_STATE':
           return await languageState(message.payload.lang)
 
@@ -597,15 +626,29 @@ export default defineBackground(() => {
         }
 
         case 'EXPORT_BACKUP': {
-          // Full backup: every word in every language, the whole library, and
-          // settings. Lemma/frequency tables are excluded on purpose — they're
-          // re-downloadable via language setup and would bloat the file.
-          const [words, library, settings] = await Promise.all([
+          // Full backup: every word in every language, the whole library,
+          // settings, and grammar-game progress. Lemma/frequency/morph tables
+          // are excluded on purpose — they're re-downloadable via setup and
+          // would bloat the file.
+          const [words, library, settings, grammar, sessions, game] = await Promise.all([
             getAllWordsEveryLang(),
             getLibrary(),
             getSettings(),
+            getAllConceptProgressEveryLang(),
+            getAllSessionDays(),
+            browser.storage.local.get('grammarGame'),
           ])
-          return { format: 'znam-backup', version: 1, exportedAt: Date.now(), words, library, settings }
+          return {
+            format: 'znam-backup',
+            version: 2,
+            exportedAt: Date.now(),
+            words,
+            library,
+            settings,
+            grammar,
+            sessions,
+            grammarGame: game.grammarGame ?? {},
+          }
         }
 
         case 'IMPORT_BACKUP': {
@@ -627,10 +670,25 @@ export default defineBackground(() => {
           if (b.settings && typeof b.settings === 'object') {
             await saveSettings({ ...DEFAULT_SETTINGS, ...b.settings })
           }
+          // v2 additions — absent from v1 files, which stay importable.
+          let grammarCount = 0
+          if (Array.isArray(b.grammar)) {
+            const rows = (b.grammar as ConceptProgress[]).filter(p => p && p.lang && p.conceptId)
+            await putConceptProgress(rows)
+            grammarCount = rows.length
+          }
+          if (Array.isArray(b.sessions)) {
+            for (const day of b.sessions as SessionDay[]) {
+              if (day && day.lang && day.date) await putSessionDay(day)
+            }
+          }
+          if (b.grammarGame && typeof b.grammarGame === 'object') {
+            await browser.storage.local.set({ grammarGame: b.grammarGame })
+          }
           // Word statuses changed under the cache's feet — rebuild lazily.
           statusMaps.clear()
           statusLoads.clear()
-          return { words: words.length, library: libraryCount }
+          return { words: words.length, library: libraryCount, grammar: grammarCount }
         }
 
         case 'IMPORT_WORDS': {

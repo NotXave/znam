@@ -1,3 +1,5 @@
+import type { SessionResult } from './grammar/types'
+
 // ── Word knowledge ──────────────────────────────────────────
 
 export type WordStatus = 'learning' | 'known' | 'ignored'
@@ -119,6 +121,14 @@ export interface Settings {
   netflixShowNative: boolean
   /** Dashboard theme (app page): midnight | daylight | nord | sepia. */
   appTheme: string
+  /** Grammar game: length of one daily session, in minutes. */
+  grammarDailyMinutes: number
+  /** Grammar game: how many new concepts may be introduced per session. */
+  grammarNewPerDay: number
+  /** Grammar game: short synthesized feedback blips (no asset files). */
+  grammarSound: boolean
+  /** Grammar game: confetti/shake animations (also honours prefers-reduced-motion). */
+  grammarMotion: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -142,6 +152,10 @@ export const DEFAULT_SETTINGS: Settings = {
   netflixAudioDeviceId: '',
   netflixShowNative: true,
   appTheme: 'midnight',
+  grammarDailyMinutes: 15,
+  grammarNewPerDay: 1,
+  grammarSound: true,
+  grammarMotion: true,
 }
 
 // ── Lookup results (reused from manga-translator) ───────────
@@ -284,6 +298,14 @@ export type Message =
   | { type: 'SCORE_VIDEOS'; payload: { lang: string; videoIds: string[] } }
   | { type: 'GET_SETTINGS' }
   | { type: 'SETTINGS_UPDATED'; payload: Settings }
+  /** Grammar game: is the morphology table installed for this language? */
+  | { type: 'GRAMMAR_STATE'; payload: { lang: string } }
+  /** Build today's session plan (all exercises pre-generated in one go). */
+  | { type: 'GRAMMAR_SESSION_START'; payload: { lang: string; minutes: number } }
+  /** Persist a finished session: SRS update, drill log, streak, XP. */
+  | { type: 'GRAMMAR_SESSION_END'; payload: { lang: string; result: SessionResult } }
+  /** Concept mastery + game state, for the home screen and concept map. */
+  | { type: 'GRAMMAR_PROGRESS'; payload: { lang: string } }
   /** Popup/command → content script. */
   | { type: 'TOGGLE_READER' }
   | { type: 'GET_READER_STATE' }

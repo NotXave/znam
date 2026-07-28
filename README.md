@@ -65,6 +65,25 @@ i+1 sweet spot.
   distinct readings), so your knowledge calibrates over time with no manual
   bookkeeping. Looking a word up excludes it from that reading's exposures.
 
+- **🦬 Trening — a 15-minute daily grammar game** (app page → Trening). Reading
+  builds vocabulary; it does not teach you the seven cases. This tab does, in
+  **German**, and it is bounded by *time* rather than item count — a session
+  ends when the fifteen minutes are up, never mid-question.
+  - **Explains, then drills.** Each concept opens with a micro-lesson: the rule,
+    a pattern table, the **bridge to German** (*„mit + Dativ" → z + Instrumental*),
+    the mistake German speakers reliably make, and a mnemonic.
+  - **Exercises are generated, not canned** — authored sentence frames are filled
+    from a tagged inflection table (`public/data/pl.morph.tsv`, from UniMorph),
+    preferring **words you are already learning in znam**. Wrong answers are
+    pulled from the *same word's own paradigm* (*kina* vs *kinu / kinem / kinie*),
+    so a case drill forces a real decision instead of a guess.
+  - **Spaced repetition over concepts**, not cards — grammar clicks all at once,
+    so an SM-2-lite scheduler tracks ~50 concepts in a prerequisite graph. A
+    topic unlocks only when its prerequisites are both accurate *and* durable.
+  - **Made to come back to**: streaks with forgiveness (a banked freeze absorbs
+    one missed day), XP with a combo multiplier, ranks *Nowicjusz → Legenda*,
+    achievements, a boss round on your weakest topic, and Żubr the bison as
+    coach. No dependencies, no asset files — CSS animations and inline SVG.
 - **Stats dashboard** (app page → Stats) — words known, learning-stage
   distribution, new words per day over the last 30 days, and reading activity
   (pages/videos, how many sit in the 90–98 % "sweet spot").
@@ -109,12 +128,33 @@ this repo (or installed from local files in the Languages tab):
 |---|---|
 | `<lang>.lemmas.tsv` | `form <TAB> lemma`, trimmed to forms of the top-50k lemmas |
 | `<lang>.freq.tsv` | `lemma <TAB> rank`, OpenSubtitles frequencies merged by lemma |
+| `<lang>.morph.tsv` | `lemma <TAB> pos <TAB> tag <TAB> form` — the tagged inflection table the grammar game drills (Polish only) |
 
 They are built offline by:
 
 ```sh
-node scripts/build-lang-data.mjs pl
+node scripts/build-lang-data.mjs pl     # reader: lemmas + frequencies
+npm run build:morph                     # Trening: tagged inflection table
 ```
+
+The morphology table comes from [UniMorph](https://github.com/unimorph/pol)
+(CC-BY-SA), intersected with the top-2000 frequency lemmas — ~23k rows covering
+~925 lemmas, every form verified rather than generated. UniMorph carries no
+closed-class words at all, so pronouns, numerals and prepositions (with the
+case each governs) are hand-authored in `utils/grammar/closed-class.ts`.
+
+## Tests
+
+```sh
+npm test              # node --test, zero dependencies
+npm run audit:grammar # sample real generated exercises for human review
+```
+
+The grammar modules under `utils/grammar/` are pure functions, which is what
+makes them testable without a browser or a test framework — the suite runs on
+Node 22's built-in runner and native TypeScript type-stripping. `audit:grammar`
+exists because no unit test catches a sentence that is perfectly inflected and
+semantically absurd; read its output whenever you add a template.
 
 Sources: Polish from [spaCy lookups](https://github.com/explosion/spacy-lookups-data)
 (PoliMorf, BSD), other languages from

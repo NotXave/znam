@@ -10,6 +10,7 @@
       <h1>znam</h1>
       <nav>
         <button data-tab="stats" class="active">Stats</button>
+        <button data-tab="trening">🦬 Trening</button>
         <button data-tab="library">Library</button>
         <button data-tab="words">Words</button>
         <button data-tab="languages">Languages</button>
@@ -82,6 +83,135 @@
         <div class="card">
           <h2>Reading</h2>
           <div id="stats-reading"></div>
+        </div>
+      </section>
+
+      <section id="tab-trening" class="tab">
+        <!-- Setup: shown until the morphology table is installed -->
+        <div class="card" id="tr-setup" hidden>
+          <h2>Grammatikdaten installieren</h2>
+          <p class="hint">
+            Das Grammatiktraining braucht eine getaggte Formentabelle
+            (<code>pl.morph.tsv</code>, aus UniMorph) — daraus werden die Übungen
+            gebaut und die Falschantworten aus demselben Paradigma erzeugt.
+            Einmalig, danach offline.
+          </p>
+          <button id="tr-install" class="primary">Installieren</button>
+          <div id="tr-setup-progress" class="progress" hidden>
+            <div id="tr-setup-bar"></div>
+            <span id="tr-setup-detail"></span>
+          </div>
+        </div>
+
+        <!-- Home -->
+        <div id="tr-home" hidden>
+          <div class="card tr-hero">
+            <div class="tr-hero-main">
+              <div class="tr-zubr">🦬</div>
+              <div class="grow">
+                <h2 id="tr-greeting">Dzień dobry!</h2>
+                <p class="hint" id="tr-today"></p>
+              </div>
+              <div class="tr-streak" id="tr-streak" title="Serie">
+                <span class="tr-flame">🔥</span>
+                <span class="tr-streak-n">0</span>
+              </div>
+            </div>
+            <div class="tr-rank">
+              <div class="tr-rank-row">
+                <span id="tr-rank-title">Nowicjusz</span>
+                <span class="hint" id="tr-rank-xp"></span>
+              </div>
+              <div class="tr-xp-track"><div class="tr-xp-fill" id="tr-xp-fill"></div></div>
+            </div>
+            <button id="tr-start" class="primary tr-start">Trening starten · 15 Min</button>
+            <div class="hint" id="tr-resume-note" hidden></div>
+          </div>
+
+          <div id="tr-tiles" class="stat-tiles"></div>
+
+          <div class="card">
+            <h2>Dein Weg durch die Grammatik</h2>
+            <p class="hint" style="margin:0 0 10px">
+              Ein Thema öffnet sich, sobald seine Voraussetzungen sitzen.
+            </p>
+            <div id="tr-map"></div>
+          </div>
+
+          <div class="card">
+            <h2>Aktivität</h2>
+            <div id="tr-activity"></div>
+          </div>
+        </div>
+
+        <!-- Lesson -->
+        <div id="tr-lesson" hidden>
+          <div class="card tr-lesson-card">
+            <div class="tr-lesson-badge">Neues Thema</div>
+            <h2 id="tr-lesson-title"></h2>
+            <p class="tr-hook" id="tr-lesson-hook"></p>
+            <p id="tr-lesson-rule"></p>
+            <div id="tr-lesson-table"></div>
+            <div class="tr-note tr-note-bridge">
+              <b>Brücke zum Deutschen</b>
+              <p id="tr-lesson-bridge"></p>
+            </div>
+            <div class="tr-note tr-note-trap">
+              <b>Typischer Fehler</b>
+              <p id="tr-lesson-trap"></p>
+            </div>
+            <div class="tr-note tr-note-mnemo">
+              <b>Merkhilfe</b>
+              <p id="tr-lesson-mnemonic"></p>
+            </div>
+            <button id="tr-lesson-go" class="primary">Verstanden — üben!</button>
+          </div>
+        </div>
+
+        <!-- Drill -->
+        <div id="tr-drill" hidden>
+          <div class="tr-hud">
+            <button id="tr-quit" class="tr-quit" title="Training beenden">✕</button>
+            <div class="tr-progress-track"><div class="tr-progress-fill" id="tr-progress-fill"></div></div>
+            <div class="tr-clock" id="tr-clock">15:00</div>
+            <div class="tr-combo" id="tr-combo" hidden><span id="tr-combo-n">0</span>×</div>
+          </div>
+
+          <div class="card tr-stage" id="tr-stage">
+            <div class="tr-phase" id="tr-phase"></div>
+            <p class="tr-prompt" id="tr-prompt"></p>
+            <p class="tr-sentence" id="tr-sentence"></p>
+            <p class="tr-cue" id="tr-cue"></p>
+
+            <div id="tr-options" class="tr-options"></div>
+            <div id="tr-freetext" class="tr-freetext" hidden>
+              <input type="text" id="tr-input" autocomplete="off" autocapitalize="off"
+                     autocorrect="off" spellcheck="false" placeholder="Antwort…" />
+              <button id="tr-submit" class="primary">Prüfen</button>
+            </div>
+
+            <div class="tr-feedback" id="tr-feedback" hidden>
+              <div class="tr-feedback-line" id="tr-feedback-line"></div>
+              <div class="hint" id="tr-feedback-note"></div>
+              <button id="tr-next" class="primary">Weiter</button>
+            </div>
+
+            <button id="tr-hint-btn" class="tr-hint-btn" hidden>Tipp anzeigen</button>
+            <div class="hint" id="tr-hint" hidden></div>
+          </div>
+        </div>
+
+        <!-- Summary -->
+        <div id="tr-summary" hidden>
+          <div class="card tr-summary-card">
+            <div class="tr-zubr tr-zubr-big">🦬</div>
+            <h2 id="tr-summary-title">Koniec!</h2>
+            <p class="hint" id="tr-summary-sub"></p>
+            <div id="tr-summary-tiles" class="stat-tiles"></div>
+            <div id="tr-summary-achievements"></div>
+            <div id="tr-summary-concepts"></div>
+            <button id="tr-summary-done" class="primary">Fertig</button>
+          </div>
         </div>
       </section>
 
