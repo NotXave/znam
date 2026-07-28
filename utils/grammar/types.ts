@@ -59,6 +59,13 @@ export type ExerciseKind =
   | 'prefix-pick'
   /** A prefixed verb → choose what it means. */
   | 'prefix-meaning'
+  /**
+   * Hand-written multiple-choice items carried on the template itself.
+   * Closed-class material (pronouns, numerals, być, preposition government)
+   * has no paradigm in the morph table and no pattern worth generating — one
+   * authored item list is both simpler and better than a builder per concept.
+   */
+  | 'quiz'
 
 /** Which lemmas may fill a slot. */
 export interface SlotSpec {
@@ -103,6 +110,19 @@ export interface Template {
   alsoAccept?: string[]
   /** Shown when the learner asks for a hint (guided phase only). */
   hintDe?: string
+  /** For `quiz` templates: the authored item pool. */
+  items?: QuizItem[]
+}
+
+/** One hand-written multiple-choice item. */
+export interface QuizItem {
+  /** German question line. */
+  promptDe: string
+  /** What the learner sees as the subject of the question (often Polish). */
+  text: string
+  answer: string
+  /** Wrong choices; the answer is added and the lot shuffled. */
+  wrong: string[]
 }
 
 /** A concrete, fully-realized question handed to the UI. */

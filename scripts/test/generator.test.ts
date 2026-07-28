@@ -307,3 +307,29 @@ test('a transform item shows the base form instead of an empty gap', () => {
   assert.ok(!e.text.includes('___'), 'no empty gap')
   assert.notEqual(e.answer, e.text, 'the answer is a different form')
 })
+
+test('Latin -um borrowings are neuter, not masculine', () => {
+  // "ends in a consonant → masculine" gets every one of these wrong, and the
+  // gender drill would then teach the wrong answer. They are indeclinable in
+  // the singular, which is what distinguishes them from native masculines.
+  for (const lemma of ['muzeum', 'centrum', 'archiwum', 'liceum', 'laboratorium']) {
+    const p = paradigms.get(lemma)
+    if (!p) continue
+    assert.equal(guessGender(p), 'n', `${lemma} should be neuter`)
+  }
+})
+
+test('native masculines in -um stay masculine', () => {
+  // rozum and tłum end in -um too, but decline normally in the singular.
+  for (const lemma of ['rozum', 'tłum']) {
+    const p = paradigms.get(lemma)
+    if (!p) continue
+    assert.equal(guessGender(p), 'm', `${lemma} should be masculine`)
+  }
+})
+
+test('the -um rule needs real evidence, not a stub paradigm', () => {
+  // A lemma with only a nominative must not be guessed neuter on the strength
+  // of its ending alone.
+  assert.equal(guessGender(new Map([['sg.nom', 'jakiśum']])), 'm')
+})

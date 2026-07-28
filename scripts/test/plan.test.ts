@@ -114,7 +114,9 @@ test('a concept only unlocks once its prerequisite is truly mastered', () => {
 
   const solid = [seasoned('gender.basic')]
   const solidPlan = buildPlan({ ...base, progress: solid })
-  assert.equal(solidPlan.newConceptId, 'case.nom.sg', 'the next tier-1 concept opens')
+  // The animacy split comes next: the accusative depends on knowing whether a
+  // masculine noun is a person, an animal or a thing.
+  assert.equal(solidPlan.newConceptId, 'gender.masc.animacy', 'the next tier-1 concept opens')
 })
 
 test('due concepts are drilled, concepts not yet due are not', () => {

@@ -92,8 +92,13 @@ for (const template of TEMPLATES) {
     })
   }
 
-  if (made === 0) failures.push(`${template.id}: generated NOTHING`)
-  else if (made < PER_TEMPLATE / 4) {
+  if (made === 0) {
+    failures.push(`${template.id}: generated NOTHING`)
+  } else if (template.kind === 'quiz') {
+    // A quiz pool is a hand-written list, so its size IS its variety. Only an
+    // implausibly tiny pool is worth flagging.
+    if (made < 3) failures.push(`${template.id}: only ${made} authored items — too few to drill`)
+  } else if (made < PER_TEMPLATE / 4) {
     failures.push(`${template.id}: only ${made} distinct items — slot spec may be too narrow`)
   }
 }

@@ -114,7 +114,27 @@ export function guessGender(paradigm: Paradigm): 'm' | 'f' | 'n' | undefined {
   if (!nom) return undefined
   if (/[oeę]$/.test(nom)) return 'n'
   if (/a$/.test(nom)) return 'f'
+
+  // Latin borrowings in -um are NEUTER (muzeum, centrum, liceum, archiwum) and
+  // the plain "ends in a consonant → masculine" rule gets every one of them
+  // wrong. They are told apart from native masculines in -um (rozum, tłum) by
+  // being indeclinable in the singular: centrum stays centrum in every case,
+  // while rozum goes rozumu, rozumem, rozumie.
+  if (/um$/.test(nom) && isIndeclinableSingular(paradigm, nom)) return 'n'
+
   return 'm'
+}
+
+/** True when every singular form equals the nominative. */
+function isIndeclinableSingular(paradigm: Paradigm, nom: string): boolean {
+  let seen = 0
+  for (const [tag, form] of paradigm) {
+    if (!tag.startsWith('sg.')) continue
+    seen++
+    if (form !== nom) return false
+  }
+  // Needs enough of the paradigm present to be evidence rather than an accident.
+  return seen >= 4
 }
 
 /**
@@ -169,13 +189,41 @@ const nextId = () => `ex${++exerciseSeq}`
  * They are handled before the lemma loop, since no morph lookup applies.
  */
 const DATA_DRIVEN: ReadonlySet<ExerciseKind> = new Set([
-  'aspect-pick', 'match', 'prefix-pick', 'prefix-meaning',
+  'aspect-pick', 'match', 'prefix-pick', 'prefix-meaning', 'quiz',
 ])
 
 /** Pick n distinct items from a pool, excluding `not`. */
 function sampleOthers<T>(pool: T[], not: T, n: number, random: () => number): T[] {
   const rest = shuffle(pool.filter(x => x !== not), random)
   return rest.slice(0, n)
+}
+
+/** quiz — one authored item, chosen at random from the template's pool. */
+function buildQuiz(
+  template: Template,
+  conceptId: string,
+  phase: SessionPhase,
+  random: () => number,
+): Exercise | undefined {
+  const items = template.items ?? []
+  if (items.length === 0) return undefined
+  const item = items[Math.floor(random() * items.length)]
+  if (item.wrong.length < 2) return undefined
+
+  return {
+    id: nextId(),
+    templateId: template.id,
+    conceptId,
+    kind: 'quiz',
+    promptDe: item.promptDe,
+    text: item.text,
+    cue: '',
+    answer: item.answer,
+    options: shuffle([item.answer, ...item.wrong], random),
+    hintDe: template.hintDe,
+    alsoAccept: template.alsoAccept ?? [],
+    phase,
+  }
 }
 
 /**
@@ -343,6 +391,7 @@ export function generate(
       case 'match': return buildMatch(template, conceptId, phase, input.random)
       case 'prefix-pick': return buildPrefixPick(template, conceptId, phase, input.random)
       case 'prefix-meaning': return buildPrefixMeaning(template, conceptId, phase, input.random)
+      case 'quiz': return buildQuiz(template, conceptId, phase, input.random)
     }
   }
 

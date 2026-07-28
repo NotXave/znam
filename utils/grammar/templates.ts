@@ -1,4 +1,7 @@
 import type { Template } from './types'
+import { CASE_TEMPLATES } from './templates/cases'
+import { VERB_TEMPLATES } from './templates/verbs'
+import { MISC_TEMPLATES } from './templates/misc'
 
 /**
  * Sentence templates. `frame` is Polish with {slot} placeholders; the slot named
@@ -9,7 +12,7 @@ import type { Template } from './types'
  * slot's constraints — that is the whole discipline of the hybrid approach, and
  * `scripts/grammar-audit.ts` exists to check it by sampling real output.
  */
-export const TEMPLATES: Template[] = [
+const TIER1_TEMPLATES: Template[] = [
   // ── gender.basic ──
   {
     id: 'gender.sort.basic',
@@ -208,6 +211,14 @@ export const TEMPLATES: Template[] = [
     answerSlot: 'n1',
     hintDe: 'Nach być steht der Beruf im Instrumental.',
   },
+]
+
+/** Tier-1 templates above, everything else grouped in ./templates/. */
+export const TEMPLATES: Template[] = [
+  ...TIER1_TEMPLATES,
+  ...CASE_TEMPLATES,
+  ...VERB_TEMPLATES,
+  ...MISC_TEMPLATES,
 ]
 
 export const TEMPLATES_BY_CONCEPT = new Map<string, Template[]>()
