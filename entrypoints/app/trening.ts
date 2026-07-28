@@ -2,7 +2,7 @@ import type { Message } from '../../utils/types'
 import type { Exercise, SessionPlan, SessionResult, Attempt } from '../../utils/grammar/types'
 import type { SetupEvent } from '../../utils/types'
 import { grade, gradeChoice } from '../../utils/grammar/grading'
-import { comboMultiplier, rankFor, nextRank, zubrLine, ACHIEVEMENTS } from '../../utils/grammar/gamify'
+import { comboMultiplier, rankFor, nextRank, zubrLine, ACHIEVEMENTS, RANKS } from '../../utils/grammar/gamify'
 import {
   commitAnswer,
   nextExercise,
@@ -15,6 +15,7 @@ import {
 import { getSettings } from '../../utils/settings'
 import { CONCEPT_BY_ID } from '../../utils/grammar/curriculum'
 import { initSlowka, setSlowkaLang, startSlowka } from './slowka'
+import { banner, confetti, loadCelebrationSettings, shake, sounds } from './celebrate'
 
 /**
  * The Trening tab: a 15-minute daily Polish grammar game.
@@ -47,6 +48,11 @@ let answered = false
 let ticker: number | undefined
 /** Items graded as near-miss get one more showing before the session ends. */
 let replayQueue: Exercise[] = []
+/** Boss round: how many hits are left, and how many it started with. */
+let bossHp = 0
+let bossMaxHp = 0
+/** Rank at session start, so a level-up can be announced at the end. */
+let rankAtStart = ''
 
 export function setTreningLang(next: string): void {
   lang = next
@@ -234,6 +240,10 @@ async function startTraining(): Promise<void> {
   attempts = []
   replayQueue = []
   combo = 0
+  // The boss has one hit point per boss item, so clearing the round kills it.
+  bossMaxHp = plan.exercises.filter(e => e.phase === 'boss').length
+  bossHp = bossMaxHp
+  rankAtStart = rankFor((await send({ type: 'GRAMMAR_PROGRESS', payload: { lang } }))?.game?.xp ?? 0).id
 
   if (plan.lesson) {
     showLesson(plan)
@@ -289,6 +299,8 @@ function advance(): void {
 function renderExercise(ex: Exercise): void {
   $('tr-phase').textContent = PHASE_LABEL[ex.phase] ?? ''
   $('tr-stage').classList.toggle('tr-stage-boss', ex.phase === 'boss')
+  $('tr-boss-bar').hidden = ex.phase !== 'boss'
+  if (ex.phase === 'boss') drawBossHp()
   $('tr-prompt').textContent = ex.promptDe
   $('tr-sentence').textContent = ex.text
   // The cue names the dictionary form the gap is asking about; kinds whose
@@ -398,8 +410,20 @@ function answerWith(value: string, btn?: HTMLButtonElement): void {
   if (result.correct) {
     combo++
     if (result.nearMiss && replayQueue.length < 5) replayQueue.push(ex)
+    if (ex.phase === 'boss') {
+      bossHp--
+      drawBossHp()
+      sounds.bossHit()
+      shake($('tr-stage'))
+      if (bossHp <= 0) confetti(30)
+    } else if (combo >= 5 && combo % 5 === 0) {
+      sounds.combo()
+    } else {
+      sounds.correct()
+    }
   } else {
     combo = 0
+    sounds.wrong()
   }
   updateCombo()
 
@@ -429,6 +453,12 @@ function answerWith(value: string, btn?: HTMLButtonElement): void {
 
   commitAnswer(state, ms)
   updateProgress()
+}
+
+function drawBossHp(): void {
+  const pct = bossMaxHp > 0 ? Math.max(0, (bossHp / bossMaxHp) * 100) : 0
+  $('tr-boss-hp-fill').style.width = `${pct}%`
+  $('tr-boss-hp-text').textContent = `${Math.max(0, bossHp)} / ${bossMaxHp}`
 }
 
 function updateCombo(): void {
@@ -485,6 +515,18 @@ async function finishSession(): Promise<void> {
 
   const summary = await send({ type: 'GRAMMAR_SESSION_END', payload: { lang, result } })
   renderSummary(summary, counted, seconds)
+
+  // Celebrate only what is worth celebrating: a session with real work in it.
+  if (attempts.length >= 5) {
+    sounds.finish()
+    const acc = summary?.total > 0 ? summary.correct / summary.total : 0
+    if (acc >= 0.8 || summary?.achievements?.length) confetti(acc === 1 ? 70 : 40)
+  }
+  if (summary?.rankId && rankAtStart && summary.rankId !== rankAtStart) {
+    sounds.levelUp()
+    confetti(80)
+    banner(`🏆 Neuer Rang: ${RANKS.find(r => r.id === summary.rankId)?.titlePl ?? ''}`)
+  }
   state = null
   current = null
 }
@@ -562,6 +604,7 @@ export function initTrening(): void {
   $('tr-start').addEventListener('click', () => void startTraining())
   $('sl-start').addEventListener('click', () => void startSlowka(() => void renderTrening()))
   initSlowka(() => void renderTrening())
+  void loadCelebrationSettings()
   $('tr-lesson-go').addEventListener('click', beginDrilling)
   $('tr-next').addEventListener('click', advance)
   $('tr-quit').addEventListener('click', quitSession)

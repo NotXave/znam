@@ -69,6 +69,15 @@ i+1 sweet spot.
   builds vocabulary; it does not teach you the seven cases. This tab does, in
   **German**, and it is bounded by *time* rather than item count — a session
   ends when the fifteen minutes are up, never mid-question.
+  - **41 concepts**, every one with a lesson and drills: all six core cases in
+    **singular and plural** (the plural is where Polish actually hurts), the
+    vocative, four verb tenses, aspect, adjective agreement, prepositions by
+    governed case, numerals, and pronouns.
+  - **Verb prefixes as a first-class group.** Polish builds huge verb families
+    off one stem, and the system transfers almost directly from German:
+    `pod·pisać` is `unter·schreiben`, `przed·stawić` is `vor·stellen`,
+    `wy·jść` is `aus·gehen`. Taught both as a system (~15 prefixes with their
+    German twins) and as families (*pisać → podpisać, zapisać, wypisać …*).
   - **Explains, then drills.** Each concept opens with a micro-lesson: the rule,
     a pattern table, the **bridge to German** (*„mit + Dativ" → z + Instrumental*),
     the mistake German speakers reliably make, and a mnemonic.
@@ -78,18 +87,32 @@ i+1 sweet spot.
     pulled from the *same word's own paradigm* (*kina* vs *kinu / kinem / kinie*),
     so a case drill forces a real decision instead of a guess.
   - **Spaced repetition over concepts**, not cards — grammar clicks all at once,
-    so an SM-2-lite scheduler tracks ~50 concepts in a prerequisite graph. A
+    so an SM-2-lite scheduler tracks 41 concepts in a prerequisite graph. A
     topic unlocks only when its prerequisites are both accurate *and* durable.
   - **Made to come back to**: streaks with forgiveness (a banked freeze absorbs
     one missed day), XP with a combo multiplier, ranks *Nowicjusz → Legenda*,
     achievements, a boss round on your weakest topic, and Żubr the bison as
     coach. No dependencies, no asset files — CSS animations and inline SVG.
+- **📚 Słówka — a vocabulary trainer for the words you keep getting wrong**
+  (second mode on the Trening screen, with its own streak). znam already counts
+  every time you look a word up; this drills exactly those. Cards come **only**
+  from the top 3000 lemmas (adjustable 1000–5000), so you never waste a session
+  on something that appears once in a million words. Three kinds: recognize
+  (Polish → four German glosses, distractors from a nearby frequency band),
+  produce (German → type the Polish), and context, which reuses the sentence
+  the reader captured when you first clicked the word. Doing both modes in a
+  day earns a **Perfekter Tag** bonus.
 - **Stats dashboard** (app page → Stats) — words known, learning-stage
   distribution, new words per day over the last 30 days, and reading activity
   (pages/videos, how many sit in the 90–98 % "sweet spot").
 - **Bootstrap your knowledge** three ways (app page):
-  - *Calibrate*: a ~35-word frequency quiz estimates "you know the top N
-    words" (logistic fit), adjustable before applying.
+  - *Calibrate*: an adaptive ~25-item quiz estimates your vocabulary size with
+    a 90 % credible interval. Some of the words are **invented** — plausible
+    Polish non-words generated offline — which measures how often you'd claim a
+    word you don't know and corrects the estimate for it. Results are applied in
+    **bands**: words you almost certainly know are marked known, the uncertain
+    band becomes *learning* rather than being claimed outright, and the run can
+    be undone in one click.
   - *Import*: the vocabulary CSV exported by
     [manga-translator](https://github.com/NotXave/manga-translator) or
     language-reactor-clone.
@@ -129,12 +152,15 @@ this repo (or installed from local files in the Languages tab):
 | `<lang>.lemmas.tsv` | `form <TAB> lemma`, trimmed to forms of the top-50k lemmas |
 | `<lang>.freq.tsv` | `lemma <TAB> rank`, OpenSubtitles frequencies merged by lemma |
 | `<lang>.morph.tsv` | `lemma <TAB> pos <TAB> tag <TAB> form` — the tagged inflection table the grammar game drills (Polish only) |
+| `<lang>.pseudo.tsv` | invented but plausible non-words, for the calibration quiz's guessing-rate correction |
 
 They are built offline by:
 
 ```sh
 node scripts/build-lang-data.mjs pl     # reader: lemmas + frequencies
 npm run build:morph                     # Trening: tagged inflection table
+node scripts/build-pseudowords.mjs pl   # Calibrate: invented words
+node scripts/build-prefix-families.mjs  # candidates for hand-verification
 ```
 
 The morphology table comes from [UniMorph](https://github.com/unimorph/pol)

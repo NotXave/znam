@@ -2,6 +2,7 @@ import type { Message } from '../../utils/types'
 import type { VocabExercise } from '../../utils/grammar/vocab'
 import { grade, gradeChoice } from '../../utils/grammar/grading'
 import { comboMultiplier, zubrLine } from '../../utils/grammar/gamify'
+import { confetti, sounds } from './celebrate'
 
 /**
  * Słówka — the vocabulary trainer's runtime.
@@ -144,8 +145,11 @@ function answer(value: string, btn?: HTMLButtonElement): void {
   if (result.correct) {
     combo++
     maxCombo = Math.max(maxCombo, combo)
+    if (combo >= 5 && combo % 5 === 0) sounds.combo()
+    else sounds.correct()
   } else {
     combo = 0
+    sounds.wrong()
   }
   const comboEl = $('sl-combo')
   comboEl.hidden = combo < 2
@@ -214,6 +218,12 @@ async function finish(): Promise<void> {
     tile(`${summary?.maxCombo ?? 0}×`, 'beste Serie'),
     tile(`${Math.round(seconds / 60)}`, 'Minuten'),
   ].join('')
+
+  if (attempts.length >= 5) {
+    sounds.finish()
+    if (summary?.perfectDay) confetti(70)
+    else if (acc >= 0.8) confetti(40)
+  }
 
   const notes: string[] = []
   if (summary?.streak) {
