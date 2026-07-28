@@ -287,10 +287,17 @@ function renderExercise(ex: Exercise): void {
 
   const options = $('tr-options')
   const freetext = $('tr-freetext')
+  const order = $('tr-order')
 
-  if (ex.options.length > 0) {
+  options.hidden = true
+  freetext.hidden = true
+  order.hidden = true
+
+  if (ex.kind === 'order') {
+    order.hidden = false
+    renderOrder(ex)
+  } else if (ex.options.length > 0) {
     options.hidden = false
-    freetext.hidden = true
     options.innerHTML = ex.options
       .map(o => `<button class="tr-option" data-value="${esc(o)}">${esc(o)}</button>`)
       .join('')
@@ -298,7 +305,6 @@ function renderExercise(ex: Exercise): void {
       btn.addEventListener('click', () => answerWith(btn.dataset.value ?? '', btn))
     }
   } else {
-    options.hidden = true
     freetext.hidden = false
     const input = $<HTMLInputElement>('tr-input')
     input.value = ''
@@ -307,12 +313,58 @@ function renderExercise(ex: Exercise): void {
   }
 }
 
+/** Words currently placed in the sentence being built. */
+let orderBuilt: string[] = []
+
+/**
+ * order — tap words from the bank to build the sentence, tap a placed word to
+ * take it back. Free-text would test typing; the point here is word ORDER.
+ */
+function renderOrder(ex: Exercise) {
+  orderBuilt = []
+  const bank = $('tr-order-bank')
+  bank.innerHTML = ex.options
+    .map((w, i) => `<button class="tr-word" data-i="${i}">${esc(w)}</button>`)
+    .join('')
+  for (const btn of bank.querySelectorAll<HTMLButtonElement>('.tr-word')) {
+    btn.addEventListener('click', () => {
+      if (answered) return
+      orderBuilt.push(btn.textContent ?? '')
+      btn.classList.add('tr-word-used')
+      drawOrderBuilt()
+    })
+  }
+  drawOrderBuilt()
+}
+
+function drawOrderBuilt() {
+  const built = $('tr-order-built')
+  built.innerHTML = orderBuilt
+    .map((w, i) => `<button class="tr-word" data-i="${i}">${esc(w)}</button>`)
+    .join('')
+  for (const btn of built.querySelectorAll<HTMLButtonElement>('.tr-word')) {
+    btn.addEventListener('click', () => {
+      if (answered) return
+      const i = Number(btn.dataset.i)
+      const [word] = orderBuilt.splice(i, 1)
+      // Return it to the first matching used slot in the bank.
+      const slot = [...$('tr-order-bank').querySelectorAll<HTMLButtonElement>('.tr-word-used')]
+        .find(b => b.textContent === word)
+      slot?.classList.remove('tr-word-used')
+      drawOrderBuilt()
+    })
+  }
+  $<HTMLButtonElement>('tr-order-check').disabled = orderBuilt.length === 0
+}
+
 function answerWith(value: string, btn?: HTMLButtonElement): void {
   if (!current || !state || answered) return
   answered = true
 
   const ex = current
-  const result = ex.options.length > 0
+  // `order` has options, but they are the sentence's own words rather than
+  // competing answers — so it grades as text, not as a choice.
+  const result = ex.kind !== 'order' && ex.options.length > 0
     ? gradeChoice(value, ex.answer)
     : grade(value, ex.answer, ex.alsoAccept)
 
@@ -337,12 +389,14 @@ function answerWith(value: string, btn?: HTMLButtonElement): void {
   updateCombo()
 
   // Mark up the chosen option and always reveal the right one.
-  if (ex.options.length > 0) {
+  if (ex.kind !== 'order' && ex.options.length > 0) {
     for (const b of $('tr-options').querySelectorAll<HTMLButtonElement>('.tr-option')) {
       b.disabled = true
       if (b.dataset.value === ex.answer) b.classList.add('tr-option-right')
       else if (b === btn) b.classList.add('tr-option-wrong')
     }
+  } else if (ex.kind === 'order') {
+    $<HTMLButtonElement>('tr-order-check').disabled = true
   } else {
     $<HTMLInputElement>('tr-input').disabled = true
   }
@@ -497,6 +551,9 @@ export function initTrening(): void {
 
   $('tr-submit').addEventListener('click', () => {
     answerWith($<HTMLInputElement>('tr-input').value)
+  })
+  $('tr-order-check').addEventListener('click', () => {
+    answerWith(orderBuilt.join(' '))
   })
   $('tr-input').addEventListener('keydown', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') answerWith($<HTMLInputElement>('tr-input').value)

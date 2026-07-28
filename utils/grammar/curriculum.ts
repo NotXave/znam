@@ -109,6 +109,20 @@ export const CONCEPTS: Concept[] = [
 
   // ── Tier 4 — the long tail ──
   {
+    id: 'prefix.system',
+    tier: 3,
+    group: 'verb',
+    titleDe: 'Vorsilben — dasselbe System wie im Deutschen',
+    requires: ['verb.present'],
+  },
+  {
+    id: 'prefix.families',
+    tier: 3,
+    group: 'verb',
+    titleDe: 'Verbfamilien — ein Stamm, zehn Wörter',
+    requires: ['prefix.system'],
+  },
+  {
     id: 'verb.future',
     tier: 4,
     group: 'verb',

@@ -593,6 +593,19 @@ button:disabled { opacity: 0.5; cursor: default; }
 .tr-option.tr-option-wrong,
 .tr-option.tr-option-wrong:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
 
+/* order: tap words to build the sentence, tap again to take them back. */
+.tr-order { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.tr-order[hidden] { display: none; }
+.tr-order-built {
+  min-height: 46px; width: 100%;
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center;
+  border-bottom: 2px dashed var(--line);
+  padding-bottom: 8px;
+}
+.tr-order-bank { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.tr-word { padding: 8px 12px; font-size: 15px; border: 1px solid var(--line); }
+.tr-word-used { opacity: 0.3; pointer-events: none; }
+
 .tr-freetext { display: flex; gap: 8px; justify-content: center; }
 .tr-freetext input { flex: 1; max-width: 280px; font-size: 17px; padding: 10px 13px; text-align: center; }
 

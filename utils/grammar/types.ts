@@ -55,6 +55,10 @@ export type ExerciseKind =
   | 'order'
   | 'match'
   | 'translate'
+  /** German meaning + base verb → choose the prefix that builds it. */
+  | 'prefix-pick'
+  /** A prefixed verb → choose what it means. */
+  | 'prefix-meaning'
 
 /** Which lemmas may fill a slot. */
 export interface SlotSpec {
@@ -83,7 +87,11 @@ export interface Template {
   id: string
   conceptIds: string[]
   kind: ExerciseKind
-  /** Polish frame with {slot} placeholders; the answer slot renders as a gap. */
+  /**
+   * Polish frame with {slot} placeholders; the answer slot renders as a gap.
+   * Data-driven kinds (aspect-pick, match, prefix-*) build their own question
+   * from the curated tables and leave this empty.
+   */
   frame: string
   /** German prompt/translation shown above the frame. */
   promptDe: string

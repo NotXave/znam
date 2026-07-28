@@ -17,7 +17,7 @@
 // utils/grammar/closed-class.ts, because prepositions additionally need
 // case-government data that no morphology dump carries.
 //
-// Usage: node scripts/build-morph-data.mjs <lang> [topN=2000]
+// Usage: node scripts/build-morph-data.mjs <lang> [topN=5000]
 
 import { mkdir, readFile, writeFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -154,7 +154,7 @@ async function main() {
     console.error('usage: node scripts/build-morph-data.mjs <lang> [topN=2000]')
     process.exit(1)
   }
-  const topN = Number(topNArg) || 2000
+  const topN = Number(topNArg) || 5000
   const repo = UNIMORPH_REPO[lang]
   if (!repo) {
     console.error(`no UniMorph repo mapped for "${lang}" — add it to UNIMORPH_REPO`)

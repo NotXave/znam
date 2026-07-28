@@ -16,6 +16,7 @@ import {
   type VocabRank,
 } from '../../utils/grammar/generator'
 import { TEMPLATES } from '../../utils/grammar/templates'
+import type { Exercise } from '../../utils/grammar/types'
 
 /** Load the real bundled table — generation bugs hide in real paradigms. */
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -43,6 +44,61 @@ const allKnown: VocabRank = {
   known: new Set(paradigms.keys()),
   ignored: new Set(),
   rank: ranks,
+}
+
+/**
+ * Each exercise kind promises the UI a different shape — a cloze has a gap and
+ * a cue, an `order` item has no sentence at all because its words ARE the
+ * options. Encoding that here keeps a new kind from silently rendering as a
+ * blank card.
+ */
+function assertKindShape(e: Exercise, id: string) {
+  switch (e.kind) {
+    case 'cloze':
+      assert.ok(e.text.includes('___'), `${id}: cloze needs a gap`)
+      assert.ok(e.cue.length > 0, `${id}: cloze needs a cue`)
+      break
+    case 'transform':
+    case 'gender-sort':
+      // The question IS the word, so there is no gap and no separate cue.
+      assert.ok(e.text.length > 0, `${id}: needs a word to transform`)
+      assert.equal(e.cue, '', `${id}: should have no cue`)
+      assert.ok(!e.text.includes('___'), `${id}: should not render a gap`)
+      break
+    case 'conjugate':
+      assert.ok(e.text.includes('___'), `${id}: conjugate needs a gap`)
+      assert.ok(e.cue.length > 0, `${id}: conjugate needs the infinitive as cue`)
+      break
+    case 'order':
+      // The scrambled words are the options; there is no sentence to show.
+      assert.equal(e.text, '', `${id}: order shows no sentence`)
+      assert.ok(e.options.length >= 3, `${id}: too few words to reorder`)
+      assert.equal(
+        [...e.options].sort().join(' '),
+        e.answer.split(' ').sort().join(' '),
+        `${id}: options must be exactly the answer's words`,
+      )
+      break
+    case 'translate':
+      assert.equal(e.text, '', `${id}: translate shows no Polish`)
+      assert.equal(e.options.length, 0, `${id}: translate is free text`)
+      assert.ok(e.promptDe.length > 0, `${id}: translate needs a German prompt`)
+      break
+    case 'aspect-pick':
+      assert.equal(e.options.length, 2, `${id}: exactly the two aspect partners`)
+      assert.ok(e.options.includes(e.answer), `${id}: answer missing from options`)
+      break
+    case 'match':
+    case 'prefix-pick':
+    case 'prefix-meaning':
+      assert.ok(e.options.length >= 3, `${id}: needs real choices`)
+      assert.ok(e.options.includes(e.answer), `${id}: answer missing from options`)
+      assert.ok(e.promptDe.length > 0, `${id}: needs a German prompt`)
+      break
+  }
+  if (e.options.length > 0) {
+    assert.equal(new Set(e.options).size, e.options.length, `${id}: duplicate options`)
+  }
 }
 
 test('the real morph table loaded', () => {
@@ -148,18 +204,8 @@ test('every template generates a valid exercise against the real table', () => {
     })
     assert.ok(exercise, `${template.id} produced nothing`)
     assert.ok(exercise.answer.length > 0, `${template.id}: empty answer`)
-    assert.ok(exercise.text.length > 0, `${template.id}: empty question`)
     assert.ok(!exercise.text.includes('{'), `${template.id}: unfilled slot in "${exercise.text}"`)
-
-    // transform and gender-sort ask about the word itself, so they show the
-    // base form as the question and carry no separate cue or gap.
-    if (template.kind === 'transform' || template.kind === 'gender-sort') {
-      assert.equal(exercise.cue, '', `${template.id}: should have no cue`)
-      assert.ok(!exercise.text.includes('___'), `${template.id}: should not render a gap`)
-    } else {
-      assert.ok(exercise.cue.length > 0, `${template.id}: empty cue`)
-      assert.ok(exercise.text.includes('___'), `${template.id}: no gap rendered`)
-    }
+    assertKindShape(exercise, template.id)
     if (template.distractors) {
       assert.ok(exercise.options.includes(exercise.answer), `${template.id}: answer missing from options`)
       assert.equal(
@@ -188,7 +234,7 @@ test('generation is stable across many lemmas without leaking placeholders', () 
       if (!e) continue
       produced++
       assert.ok(!e.text.includes('{'), `${template.id}: unfilled slot "${e.text}"`)
-      assert.ok(!e.answer.includes(' '), `${template.id}: answer should be one word: "${e.answer}"`)
+      assertKindShape(e, template.id)
       for (const opt of e.options) {
         assert.ok(opt.length > 0, `${template.id}: empty option`)
       }

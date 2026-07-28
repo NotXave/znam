@@ -1,5 +1,8 @@
-import type { Exercise, SessionPhase, SlotSpec, Template } from './types'
+import type { Exercise, ExerciseKind, SessionPhase, SlotSpec, Template } from './types'
 import { BLOCKED_LEMMAS, inSemanticClass } from './semantics'
+import { ASPECT_PAIRS } from './aspect-pairs'
+import { PREFIX_BY_ID, VERB_FAMILIES } from './prefixes'
+import { CASE_NAMES_DE, PREPOSITIONS, type Case } from './closed-class'
 
 /**
  * Exercise generation. Pure — it is handed a paradigm lookup and a vocabulary
@@ -158,6 +161,170 @@ export const GENDER_LABEL_DE: Record<'m' | 'f' | 'n', string> = {
 
 let exerciseSeq = 0
 
+const nextId = () => `ex${++exerciseSeq}`
+
+/**
+ * Kinds that build their own question from the curated tables (aspect pairs,
+ * prefix families, preposition government) rather than from a noun paradigm.
+ * They are handled before the lemma loop, since no morph lookup applies.
+ */
+const DATA_DRIVEN: ReadonlySet<ExerciseKind> = new Set([
+  'aspect-pick', 'match', 'prefix-pick', 'prefix-meaning',
+])
+
+/** Pick n distinct items from a pool, excluding `not`. */
+function sampleOthers<T>(pool: T[], not: T, n: number, random: () => number): T[] {
+  const rest = shuffle(pool.filter(x => x !== not), random)
+  return rest.slice(0, n)
+}
+
+/**
+ * aspect-pick — the imperfective/perfective decision, in a context that forces
+ * it. The two options are the two members of one pair, so the only thing being
+ * tested is whether the action is ongoing or completed.
+ */
+function buildAspectPick(
+  template: Template,
+  conceptId: string,
+  phase: SessionPhase,
+  random: () => number,
+): Exercise | undefined {
+  const pairs = ASPECT_PAIRS.filter(p => p.byPrefix || !p.byPrefix)
+  if (pairs.length === 0) return undefined
+  const pair = pairs[Math.floor(random() * pairs.length)]
+
+  // Half the items ask for the completed act, half for the ongoing one.
+  const wantPerfective = random() < 0.5
+  const answer = wantPerfective ? pair.perf : pair.impf
+  const promptDe = wantPerfective
+    ? `${pair.de} — einmal, abgeschlossen (vollendet)`
+    : `${pair.de} — immer wieder oder gerade jetzt (unvollendet)`
+
+  return {
+    id: nextId(),
+    templateId: template.id,
+    conceptId,
+    kind: 'aspect-pick',
+    promptDe,
+    text: pair.de,
+    cue: '',
+    answer,
+    options: shuffle([pair.impf, pair.perf], random),
+    hintDe: template.hintDe,
+    alsoAccept: [],
+    phase,
+  }
+}
+
+/**
+ * match — which case a preposition governs. Prepositions with more than one
+ * government are skipped: an item whose correct answer depends on a sense the
+ * question doesn't supply is unanswerable, not hard.
+ */
+function buildMatch(
+  template: Template,
+  conceptId: string,
+  phase: SessionPhase,
+  random: () => number,
+): Exercise | undefined {
+  const unambiguous = PREPOSITIONS.filter(p => p.governs.length === 1)
+  if (unambiguous.length === 0) return undefined
+  const prep = unambiguous[Math.floor(random() * unambiguous.length)]
+  const answerCase = prep.governs[0]
+
+  const allCases: Case[] = ['nom', 'gen', 'dat', 'acc', 'ins', 'loc']
+  const distractors = sampleOthers(allCases, answerCase, 3, random)
+
+  return {
+    id: nextId(),
+    templateId: template.id,
+    conceptId,
+    kind: 'match',
+    promptDe: `Welchen Fall verlangt „${prep.pl}" (${prep.de})?`,
+    text: prep.pl,
+    cue: '',
+    answer: CASE_NAMES_DE[answerCase],
+    options: shuffle(
+      [CASE_NAMES_DE[answerCase], ...distractors.map(c => CASE_NAMES_DE[c])],
+      random,
+    ),
+    hintDe: prep.noteDe ?? template.hintDe,
+    alsoAccept: [],
+    phase,
+  }
+}
+
+/**
+ * prefix-pick — given a German meaning and the base verb, choose the prefix.
+ * The distractors are prefixes from the SAME family, so the learner has to know
+ * what each prefix means rather than recognising one familiar word.
+ */
+function buildPrefixPick(
+  template: Template,
+  conceptId: string,
+  phase: SessionPhase,
+  random: () => number,
+): Exercise | undefined {
+  const families = VERB_FAMILIES.filter(f => f.members.length >= 4)
+  if (families.length === 0) return undefined
+  const family = families[Math.floor(random() * families.length)]
+  const member = family.members[Math.floor(random() * family.members.length)]
+
+  const siblings = family.members.filter(m => m.prefix !== member.prefix).map(m => m.prefix)
+  const distractors = shuffle([...new Set(siblings)], random).slice(0, 3)
+  if (distractors.length < 2) return undefined
+
+  return {
+    id: nextId(),
+    templateId: template.id,
+    conceptId,
+    kind: 'prefix-pick',
+    promptDe: `„${member.de}" — welche Vorsilbe macht das aus ${family.base} (${family.baseDe})?`,
+    text: `___ + ${family.base}`,
+    cue: '',
+    answer: `${member.prefix}-`,
+    options: shuffle([member.prefix, ...distractors].map(p => `${p}-`), random),
+    hintDe: PREFIX_BY_ID.get(member.prefix)?.meaningDe ?? template.hintDe,
+    alsoAccept: [],
+    phase,
+  }
+}
+
+/**
+ * prefix-meaning — the reverse: given the built verb, choose what it means.
+ * Options come from the same family so the base is constant and the prefix is
+ * the only thing that distinguishes them.
+ */
+function buildPrefixMeaning(
+  template: Template,
+  conceptId: string,
+  phase: SessionPhase,
+  random: () => number,
+): Exercise | undefined {
+  const families = VERB_FAMILIES.filter(f => f.members.length >= 4)
+  if (families.length === 0) return undefined
+  const family = families[Math.floor(random() * families.length)]
+  const member = family.members[Math.floor(random() * family.members.length)]
+
+  const others = sampleOthers(family.members.map(m => m.de), member.de, 3, random)
+  if (others.length < 2) return undefined
+
+  return {
+    id: nextId(),
+    templateId: template.id,
+    conceptId,
+    kind: 'prefix-meaning',
+    promptDe: `Was heißt ${member.verb}?  (${family.base} = ${family.baseDe})`,
+    text: member.verb,
+    cue: '',
+    answer: member.de,
+    options: shuffle([member.de, ...others], random),
+    hintDe: PREFIX_BY_ID.get(member.prefix)?.meaningDe ?? template.hintDe,
+    alsoAccept: [],
+    phase,
+  }
+}
+
 /**
  * Realize one template into a concrete exercise.
  * Returns undefined when no candidate lemma satisfies every slot — the caller
@@ -169,6 +336,16 @@ export function generate(
   phase: SessionPhase,
   input: GeneratorInput,
 ): Exercise | undefined {
+  // Kinds whose question comes from the curated tables, not from a paradigm.
+  if (DATA_DRIVEN.has(template.kind)) {
+    switch (template.kind) {
+      case 'aspect-pick': return buildAspectPick(template, conceptId, phase, input.random)
+      case 'match': return buildMatch(template, conceptId, phase, input.random)
+      case 'prefix-pick': return buildPrefixPick(template, conceptId, phase, input.random)
+      case 'prefix-meaning': return buildPrefixMeaning(template, conceptId, phase, input.random)
+    }
+  }
+
   const answerSpec = template.slots[template.answerSlot]
   if (!answerSpec) return undefined
 
@@ -201,6 +378,34 @@ export function generate(
 
     const answer = paradigm.get(answerSpec.tag)!
 
+    // conjugate — fill one cell of a verb table. The distractors are other
+    // persons of the SAME verb, so the ending is the whole question.
+    if (template.kind === 'conjugate') {
+      const options = template.distractors
+        ? shuffle(
+            [answer, ...buildDistractors(
+              paradigm, answer, template.distractors.fromTags,
+              template.distractors.count, input.random,
+            )],
+            input.random,
+          )
+        : []
+      return {
+        id: nextId(),
+        templateId: template.id,
+        conceptId,
+        kind: 'conjugate',
+        promptDe: template.promptDe,
+        text: template.frame.replace(`{${template.answerSlot}}`, '___').replace('{base}', lemma),
+        cue: lemma,
+        answer,
+        options,
+        hintDe: template.hintDe,
+        alsoAccept: template.alsoAccept ?? [],
+        phase,
+      }
+    }
+
     // Fill every non-answer slot; bail if any of them cannot be satisfied.
     let text = template.frame
     let ok = true
@@ -211,6 +416,50 @@ export function generate(
       text = text.replace(`{${name}}`, form)
     }
     if (!ok) continue
+
+    // order — the learner rebuilds the sentence, so the whole thing is the
+    // answer and the "options" are its shuffled words.
+    if (template.kind === 'order') {
+      const full = text.replace(`{${template.answerSlot}}`, answer)
+      const words = full.replace(/[.?!]$/, '').split(/\s+/).filter(Boolean)
+      if (words.length < 3) continue
+      const scrambled = shuffle(words, input.random)
+      // A shuffle that happens to reproduce the sentence is not a puzzle.
+      if (scrambled.join(' ') === words.join(' ')) continue
+      return {
+        id: nextId(),
+        templateId: template.id,
+        conceptId,
+        kind: 'order',
+        promptDe: template.promptDe,
+        text: '',
+        cue: '',
+        answer: words.join(' '),
+        options: scrambled,
+        hintDe: template.hintDe,
+        alsoAccept: template.alsoAccept ?? [],
+        phase,
+      }
+    }
+
+    // translate — German in, Polish out, free text. Boss rounds only.
+    if (template.kind === 'translate') {
+      const full = text.replace(`{${template.answerSlot}}`, answer)
+      return {
+        id: nextId(),
+        templateId: template.id,
+        conceptId,
+        kind: 'translate',
+        promptDe: template.promptDe,
+        text: '',
+        cue: '',
+        answer: full.replace(/[.?!]$/, ''),
+        options: [],
+        hintDe: template.hintDe,
+        alsoAccept: template.alsoAccept ?? [],
+        phase,
+      }
+    }
 
     // A transform item has no carrier sentence — showing a bare '___' would
     // leave nothing on screen, so the base form itself is the question.

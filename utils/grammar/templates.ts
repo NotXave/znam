@@ -115,6 +115,99 @@ export const TEMPLATES: Template[] = [
     answerSlot: 'n1',
     hintDe: 'Männlich und sächlich → -em. Weiblich auf -a → -ą.',
   },
+
+  // ── verb.present ──
+  {
+    id: 'verb.pres.conjugate',
+    conceptIds: ['verb.present'],
+    kind: 'conjugate',
+    frame: '{v1}',
+    promptDe: 'ja … — 1. Person Singular Präsens',
+    slots: { v1: { pos: 'V', tag: 'pres.p1.sg' } },
+    answerSlot: 'v1',
+    distractors: { fromTags: ['pres.p2.sg', 'pres.p3.sg', 'pres.p3.pl'], count: 3 },
+    hintDe: 'Die 1. Person Singular endet meist auf -ę oder -am/-em.',
+  },
+  {
+    id: 'verb.pres.conjugate.p3',
+    conceptIds: ['verb.present'],
+    kind: 'conjugate',
+    frame: '{v1}',
+    promptDe: 'on/ona … — 3. Person Singular Präsens',
+    slots: { v1: { pos: 'V', tag: 'pres.p3.sg' } },
+    answerSlot: 'v1',
+    distractors: { fromTags: ['pres.p1.sg', 'pres.p2.sg', 'pres.p1.pl'], count: 3 },
+    hintDe: 'Die 3. Person Singular ist die kürzeste Form — oft der nackte Stamm.',
+  },
+
+  // ── aspect.intro ──
+  {
+    id: 'aspect.pick.basic',
+    conceptIds: ['aspect.intro'],
+    kind: 'aspect-pick',
+    frame: '',
+    promptDe: '',
+    slots: {},
+    answerSlot: '',
+    hintDe: 'Vollendet = einmal, fertig, ein Ergebnis. Unvollendet = Prozess, Gewohnheit, gerade jetzt.',
+  },
+
+  // ── prep.case ──
+  {
+    id: 'prep.match.case',
+    conceptIds: ['prep.case'],
+    kind: 'match',
+    frame: '',
+    promptDe: '',
+    slots: {},
+    answerSlot: '',
+    hintDe: 'do, od, bez, dla → Genitiv. z (mit), nad, pod, przed → Instrumental. w, na, o, przy → Lokativ.',
+  },
+
+  // ── prefix.system / prefix.families ──
+  {
+    id: 'prefix.pick.basic',
+    conceptIds: ['prefix.system'],
+    kind: 'prefix-pick',
+    frame: '',
+    promptDe: '',
+    slots: {},
+    answerSlot: '',
+  },
+  {
+    id: 'prefix.meaning.basic',
+    conceptIds: ['prefix.families'],
+    kind: 'prefix-meaning',
+    frame: '',
+    promptDe: '',
+    slots: {},
+    answerSlot: '',
+  },
+
+  // ── sentence order (tier 1 syntax practice) ──
+  {
+    id: 'order.acc.simple',
+    conceptIds: ['case.acc.sg'],
+    kind: 'order',
+    // Needs at least three words to be a puzzle rather than a pair.
+    frame: 'Dzisiaj mam {n1}.',
+    promptDe: 'Bau den Satz: „Heute habe ich …"',
+    slots: { n1: { pos: 'N', tag: 'sg.acc', semantic: 'concrete' } },
+    answerSlot: 'n1',
+    hintDe: 'Polnisch ist flexibel, aber Subjekt–Verb–Objekt ist die neutrale Reihenfolge.',
+  },
+
+  // ── boss-round translation ──
+  {
+    id: 'translate.ins.jestem',
+    conceptIds: ['case.ins.sg'],
+    kind: 'translate',
+    frame: 'Jestem {n1}.',
+    promptDe: 'Übersetze: „Ich bin …" (Beruf)',
+    slots: { n1: { pos: 'N', tag: 'sg.ins', semantic: 'person' } },
+    answerSlot: 'n1',
+    hintDe: 'Nach być steht der Beruf im Instrumental.',
+  },
 ]
 
 export const TEMPLATES_BY_CONCEPT = new Map<string, Template[]>()
