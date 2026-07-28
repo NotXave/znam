@@ -1,4 +1,5 @@
 import type { SessionResult } from './grammar/types'
+import type { CalibrationAnswer } from './calibration'
 
 // ── Word knowledge ──────────────────────────────────────────
 
@@ -293,8 +294,26 @@ export type Message =
       }
     }
   | { type: 'CALIBRATION_SAMPLE'; payload: { lang: string } }
-  | { type: 'CALIBRATION_ESTIMATE'; payload: { answers: { rank: number; known: boolean }[] } }
-  | { type: 'CALIBRATION_APPLY'; payload: { lang: string; topN: number } }
+  /** Adaptive quiz: given the answers so far, return the next item or finish. */
+  | {
+      type: 'CALIBRATION_NEXT'
+      payload: { lang: string; answers: CalibrationAnswer[]; used: string[] }
+    }
+  | { type: 'CALIBRATION_ESTIMATE'; payload: { lang: string; answers: CalibrationAnswer[] } }
+  | {
+      type: 'CALIBRATION_APPLY'
+      payload: {
+        lang: string
+        /** Ranks up to here are recorded as known … */
+        knownUpTo: number
+        /** … and up to here as `learning`, graded by confidence. */
+        learningUpTo: number
+        /** Carried so the band levels can be scaled by the fitted posterior. */
+        answers?: CalibrationAnswer[]
+      }
+    }
+  /** Reverse the last calibration run for a language. */
+  | { type: 'CALIBRATION_UNDO'; payload: { lang: string } }
   | { type: 'SCORE_VIDEOS'; payload: { lang: string; videoIds: string[] } }
   | { type: 'GET_SETTINGS' }
   | { type: 'SETTINGS_UPDATED'; payload: Settings }

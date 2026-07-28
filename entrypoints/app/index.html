@@ -333,27 +333,60 @@
         <div class="card" id="cal-intro">
           <h2>Estimate your vocabulary</h2>
           <p class="hint">
-            You'll see ~35 words sampled across the frequency spectrum. Answer
-            honestly whether you know each one; the estimate marks the most
-            frequent N words as known. Requires installed language data.
+            You'll see words sampled across the frequency spectrum — answer
+            honestly whether you know each one. The quiz adapts as it goes, so
+            it needs about 20 questions instead of 38.
+          </p>
+          <p class="hint">
+            <b>Some of the words are fake.</b> They look Polish but don't exist.
+            That's not a trick — it measures how often you'd claim a word you
+            don't actually know, and corrects your score for it. Nobody scores
+            zero on those, so don't worry about it.
+          </p>
+          <p class="hint">
+            Requires installed language data (Languages tab).
           </p>
           <button id="cal-start" class="primary">Start quiz</button>
+          <div id="cal-previous" class="hint" hidden></div>
         </div>
+
         <div class="card" id="cal-quiz" hidden>
           <div id="cal-word"></div>
-          <div class="cal-buttons">
+          <div class="cal-buttons" id="cal-yesno">
             <button id="cal-know" class="primary">I know it</button>
             <button id="cal-dont">Don't know</button>
           </div>
+          <div id="cal-meaning" class="cal-meaning" hidden></div>
+          <div class="cal-track"><div id="cal-bar"></div></div>
           <div id="cal-progress" class="hint"></div>
         </div>
+
         <div class="card" id="cal-result" hidden>
           <h2>Result</h2>
-          <p>You know roughly the top <b id="cal-topn"></b> words.</p>
-          <input type="range" id="cal-slider" min="100" max="50000" step="100" />
-          <p class="hint">Adjust if the estimate feels off, then apply.</p>
-          <button id="cal-apply" class="primary">Mark top <span id="cal-topn2"></span> words as known</button>
+          <p class="cal-size">
+            You know roughly <b id="cal-size"></b> words.
+          </p>
+          <p class="hint" id="cal-ci"></p>
+          <div id="cal-honesty" class="hint" hidden></div>
+
+          <h2 style="margin-top:16px">What this will change</h2>
+          <p class="hint" style="margin:0 0 8px">
+            Words you almost certainly know are marked <b>known</b>. The
+            uncertain band is marked <b>learning</b> rather than claimed
+            outright — that's the honest reading of the estimate. Anything
+            below is left alone. Words you've already tracked are never
+            overwritten.
+          </p>
+          <div id="cal-bands"></div>
+
+          <div class="toolbar" style="margin-top:12px">
+            <button id="cal-apply" class="primary">Apply</button>
+            <button id="cal-redo">Retake quiz</button>
+          </div>
           <div id="cal-applied" class="hint"></div>
+          <div class="toolbar" id="cal-undo-row" hidden>
+            <button id="cal-undo">↩ Undo this calibration</button>
+          </div>
         </div>
       </section>
     </main>

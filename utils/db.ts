@@ -102,6 +102,43 @@ export async function putWords(records: WordRecord[]): Promise<void> {
   await txDone(tx)
 }
 
+/**
+ * Write in chunks, reporting progress. Calibration can produce tens of
+ * thousands of records, and a single transaction that size gives no feedback
+ * and aborts atomically if the quota is hit.
+ */
+export async function putWordsChunked(
+  records: WordRecord[],
+  chunk = 2000,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  for (let i = 0; i < records.length; i += chunk) {
+    await putWords(records.slice(i, i + chunk))
+    onProgress?.(Math.min(i + chunk, records.length), records.length)
+  }
+}
+
+/**
+ * Delete every word written by one bulk run, identified by source + timestamp.
+ * This is what makes a calibration reversible — previously the write was
+ * permanent with no reverse anywhere in the codebase.
+ */
+export async function deleteWordsByRun(
+  lang: string,
+  source: WordRecord['source'],
+  createdAt: number,
+): Promise<number> {
+  const words = await getAllWords(lang)
+  const doomed = words.filter(w => w.source === source && w.createdAt === createdAt)
+  if (doomed.length === 0) return 0
+  const db = await openDb()
+  const tx = db.transaction('words', 'readwrite')
+  const store = tx.objectStore('words')
+  for (const w of doomed) store.delete([w.lang, w.lemma])
+  await txDone(tx)
+  return doomed.length
+}
+
 export async function deleteWord(lang: string, lemma: string): Promise<void> {
   const db = await openDb()
   const tx = db.transaction('words', 'readwrite')

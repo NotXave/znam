@@ -18,6 +18,9 @@ import {
   getWord,
   putLibraryEntry,
   putWords,
+  putWordsChunked,
+  deleteWordsByRun,
+  getTopLemmas,
 } from '../utils/db'
 import { handleSetupPort, languageState, setCalibratedAt } from '../utils/language-setup'
 import {
@@ -27,7 +30,15 @@ import {
   handleGrammarSetupPort,
   startGrammarSession,
 } from '../utils/grammar-bg'
-import { calibrationLemmas, calibrationSample, estimateKnownRank } from '../utils/calibration'
+import { calibrationNext } from '../utils/calibration-bg'
+import {
+  bandForRank,
+  calibrationSample,
+  falseAlarmRate,
+  fitPosterior,
+  posteriorPKnown,
+  summarize,
+} from '../utils/calibration'
 import { countFreqRows, getFreqRanks, getVideoScores, putVideoScore } from '../utils/db'
 import {
   getAllConceptProgressEveryLang,
@@ -153,7 +164,9 @@ async function computeStats(lang: string) {
     counts[w.status]++
     if (w.status === 'learning') levels[(w.level ?? 1) - 1]++
     if (now - w.createdAt < 7 * DAY) addedThisWeek++
-    if (now - w.createdAt < 30 * DAY) {
+    // Calibration's bulk write shares one timestamp across up to 50k records;
+    // charting it would flatten every genuine day to zero. Totals keep it.
+    if (w.source !== 'calibration' && now - w.createdAt < 30 * DAY) {
       const day = new Date(w.createdAt).toISOString().slice(0, 10)
       daily[day] = (daily[day] || 0) + 1
     }
@@ -241,7 +254,13 @@ async function computeDeepStats(lang: string) {
 
   // Vocabulary growth: cumulative known+learning words by first-tracked date,
   // downsampled to ≤120 points for the chart.
-  const tracked = words.filter(w => w.status === 'known' || w.status === 'learning')
+  // Calibration writes tens of thousands of records with one identical
+  // timestamp, which is not a day of learning — including it turns the growth
+  // curve into a vertical cliff and buries every real day in the daily chart.
+  // It still counts toward totals, just not toward per-day history.
+  const organic = words.filter(w => w.source !== 'calibration')
+
+  const tracked = organic.filter(w => w.status === 'known' || w.status === 'learning')
   const created = tracked.map(w => w.createdAt).sort((a, b) => a - b)
   const growth: { t: number; total: number }[] = []
   const step = Math.max(1, Math.ceil(created.length / 120))
@@ -257,7 +276,7 @@ async function computeDeepStats(lang: string) {
     const d = new Date(t).toISOString().slice(0, 10)
     activity[d] = (activity[d] || 0) + 1
   }
-  for (const w of words) {
+  for (const w of organic) {
     bump(w.createdAt)
     if (w.updatedAt - w.createdAt > DAY) bump(w.updatedAt)
   }
@@ -751,22 +770,82 @@ export default defineBackground(() => {
           return await calibrationSample(message.payload.lang)
 
         case 'CALIBRATION_APPLY': {
-          const { lang, topN } = message.payload
+          // Banded, not a prefix. Words above the 90 % mark are recorded as
+          // known; the uncertain 50–90 % band becomes `learning` at a level
+          // scaled by confidence; below 50 % nothing is claimed at all. The old
+          // behaviour marked everything under the 50 % crossing as known, which
+          // by construction asserted knowledge of words the learner didn't have.
+          const { lang, knownUpTo, learningUpTo, answers } = message.payload
           const statuses = await statusMapFor(lang)
           const now = Date.now()
+
+          const post = fitPosterior(answers ?? [], falseAlarmRate(answers ?? []))
+          const ceiling = Math.max(knownUpTo, learningUpTo)
+          const lemmas = await getTopLemmas(lang, ceiling)
+
           const records: WordRecord[] = []
-          for (const lemma of await calibrationLemmas(lang, topN)) {
-            if (statuses.has(lemma)) continue // never downgrade
-            statuses.set(lemma, { status: 'known' })
-            records.push({ lang, lemma, status: 'known', source: 'calibration', createdAt: now, updatedAt: now })
+          let known = 0
+          let learning = 0
+          for (let i = 0; i < lemmas.length; i++) {
+            const lemma = lemmas[i]
+            if (statuses.has(lemma)) continue // never downgrade existing knowledge
+            const rank = i + 1
+            const assignment = bandForRank(
+              rank,
+              knownUpTo,
+              learningUpTo,
+              answers?.length ? posteriorPKnown(post, rank) : undefined,
+            )
+            if (!assignment) continue
+            statuses.set(lemma, { status: assignment.band, level: assignment.level })
+            records.push({
+              lang, lemma,
+              status: assignment.band,
+              level: assignment.level,
+              source: 'calibration',
+              createdAt: now, updatedAt: now,
+            })
+            if (assignment.band === 'known') known++
+            else learning++
           }
-          await putWords(records)
+
+          await putWordsChunked(records)
           await setCalibratedAt(lang)
-          return { added: records.length }
+
+          // Stamp the run so it can be undone as a unit.
+          const { langMeta } = await browser.storage.local.get('langMeta')
+          const meta = (langMeta as any) ?? {}
+          meta[lang] = { ...meta[lang], calibrationRun: now }
+          await browser.storage.local.set({ langMeta: meta })
+
+          return { added: records.length, known, learning }
         }
 
-        case 'CALIBRATION_ESTIMATE':
-          return { topN: estimateKnownRank(message.payload.answers) }
+        case 'CALIBRATION_NEXT': {
+          const { lang, answers, used } = message.payload
+          return await calibrationNext(lang, answers, used)
+        }
+
+        case 'CALIBRATION_ESTIMATE': {
+          const answers = message.payload.answers
+          const maxRank = (await countFreqRows(message.payload.lang ?? 'pl')) || 50000
+          const f = falseAlarmRate(answers)
+          return summarize(fitPosterior(answers, f), maxRank)
+        }
+
+        case 'CALIBRATION_UNDO': {
+          const { lang } = message.payload
+          const { langMeta } = await browser.storage.local.get('langMeta')
+          const runAt = (langMeta as any)?.[lang]?.calibrationRun
+          if (!runAt) return { removed: 0 }
+          const removed = await deleteWordsByRun(lang, 'calibration', runAt)
+          const meta = (langMeta as any) ?? {}
+          meta[lang] = { ...meta[lang], calibrationRun: undefined }
+          await browser.storage.local.set({ langMeta: meta })
+          statusMaps.delete(lang)
+          statusLoads.delete(lang)
+          return { removed }
+        }
 
         case 'SCORE_VIDEOS':
           return await scoreVideos(message.payload.lang, message.payload.videoIds)

@@ -337,6 +337,35 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 #cal-slider { width: 100%; margin: 10px 0; }
 
+/* Progress through the adaptive quiz. */
+.cal-track {
+  height: 6px;
+  background: var(--track-solid);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 14px 0 8px;
+}
+.cal-track > div {
+  height: 100%;
+  width: 0;
+  background: var(--accent-2);
+  border-radius: 999px;
+  transition: width 0.25s;
+}
+
+/* Meaning-check items: four German glosses instead of yes/no. */
+.cal-meaning { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.cal-meaning button { padding: 12px 10px; font-size: 14px; }
+
+.cal-size { font-size: 17px; margin: 4px 0; }
+.cal-size b { font-size: 22px; color: var(--accent-ink); }
+
+.cal-meaning[hidden], .cal-buttons[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cal-track > div { transition: none; }
+}
+
 /* ── Stats dashboard ───────────────────────────────────────── */
 
 .stat-tiles {
