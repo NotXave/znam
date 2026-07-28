@@ -503,6 +503,26 @@ button:disabled { opacity: 0.5; cursor: default; }
   transition: width 0.4s ease-out;
 }
 
+/* Two modes side by side — one habit, two doors. */
+.tr-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tr-mode-btn {
+  display: flex; flex-direction: column; gap: 2px; align-items: center;
+  padding: 14px 12px; position: relative;
+}
+.tr-mode-title { font-size: 16px; font-weight: 700; }
+.tr-mode-sub { font-size: 12px; opacity: 0.85; font-weight: 400; }
+.tr-mode-streak { font-size: 12px; font-weight: 700; opacity: 0.95; min-height: 16px; }
+
+.tr-perfect {
+  background: var(--gold); color: #1c1c28;
+  border-radius: 10px; padding: 8px 12px; margin-top: 10px;
+  font-weight: 600; font-size: 13px; text-align: center;
+}
+
+@media (max-width: 480px) {
+  .tr-modes { grid-template-columns: 1fr; }
+}
+
 .tr-start { font-size: 15px; padding: 12px 18px; width: 100%; }
 
 /* Concept map */

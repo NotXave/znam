@@ -31,6 +31,7 @@ import {
   startGrammarSession,
 } from '../utils/grammar-bg'
 import { calibrationNext } from '../utils/calibration-bg'
+import { endVocabSession, startVocabSession, vocabProgress } from '../utils/vocab-bg'
 import {
   bandForRank,
   calibrationSample,
@@ -43,10 +44,13 @@ import { countFreqRows, getFreqRanks, getVideoScores, putVideoScore } from '../u
 import {
   getAllConceptProgressEveryLang,
   getAllSessionDays,
+  getAllVocabCards,
   putConceptProgress,
   putSessionDay,
+  putVocabCards,
 } from '../utils/db'
 import type { ConceptProgress, SessionDay } from '../utils/grammar/types'
+import type { VocabCard } from '../utils/grammar/vocab'
 import { rescoreLemmaCounts, scoreTokens } from '../utils/scoring'
 import { tokenize } from '../utils/tokenizer'
 import { fetchCaptionText, fetchVideoInfo, pickTrack } from '../utils/youtube-captions'
@@ -635,6 +639,16 @@ export default defineBackground(() => {
         case 'GRAMMAR_PROGRESS':
           return await grammarProgress(message.payload.lang)
 
+        // ── Słówka (vocabulary trainer) ──
+        case 'VOCAB_SESSION_START':
+          return await startVocabSession(message.payload.lang, message.payload.minutes)
+
+        case 'VOCAB_SESSION_END':
+          return await endVocabSession(message.payload.lang, message.payload.result)
+
+        case 'VOCAB_PROGRESS':
+          return await vocabProgress(message.payload.lang)
+
         case 'GET_LANGUAGE_STATE':
           return await languageState(message.payload.lang)
 
@@ -649,12 +663,13 @@ export default defineBackground(() => {
           // settings, and grammar-game progress. Lemma/frequency/morph tables
           // are excluded on purpose — they're re-downloadable via setup and
           // would bloat the file.
-          const [words, library, settings, grammar, sessions, game] = await Promise.all([
+          const [words, library, settings, grammar, sessions, vocab, game] = await Promise.all([
             getAllWordsEveryLang(),
             getLibrary(),
             getSettings(),
             getAllConceptProgressEveryLang(),
             getAllSessionDays(),
+            getAllVocabCards(),
             browser.storage.local.get('grammarGame'),
           ])
           return {
@@ -666,6 +681,7 @@ export default defineBackground(() => {
             settings,
             grammar,
             sessions,
+            vocab,
             grammarGame: game.grammarGame ?? {},
           }
         }
@@ -700,6 +716,11 @@ export default defineBackground(() => {
             for (const day of b.sessions as SessionDay[]) {
               if (day && day.lang && day.date) await putSessionDay(day)
             }
+          }
+          if (Array.isArray(b.vocab)) {
+            await putVocabCards(
+              (b.vocab as VocabCard[]).filter(c => c && c.lang && c.lemma),
+            )
           }
           if (b.grammarGame && typeof b.grammarGame === 'object') {
             await browser.storage.local.set({ grammarGame: b.grammarGame })

@@ -124,7 +124,19 @@
               </div>
               <div class="tr-xp-track"><div class="tr-xp-fill" id="tr-xp-fill"></div></div>
             </div>
-            <button id="tr-start" class="primary tr-start">Trening starten · 15 Min</button>
+            <div class="tr-modes">
+              <button id="tr-start" class="primary tr-mode-btn">
+                <span class="tr-mode-title">🦬 Trening</span>
+                <span class="tr-mode-sub">Grammatik · 15 Min</span>
+                <span class="tr-mode-streak" id="tr-streak-grammar"></span>
+              </button>
+              <button id="sl-start" class="primary tr-mode-btn">
+                <span class="tr-mode-title">📚 Słówka</span>
+                <span class="tr-mode-sub">Vokabeln · 10 Min</span>
+                <span class="tr-mode-streak" id="tr-streak-vocab"></span>
+              </button>
+            </div>
+            <div class="hint" id="tr-perfect-day" hidden></div>
             <div class="hint" id="tr-resume-note" hidden></div>
           </div>
 
@@ -203,6 +215,47 @@
 
             <button id="tr-hint-btn" class="tr-hint-btn" hidden>Tipp anzeigen</button>
             <div class="hint" id="tr-hint" hidden></div>
+          </div>
+        </div>
+
+        <!-- Słówka drill -->
+        <div id="tr-vocab" hidden>
+          <div class="tr-hud">
+            <button id="sl-quit" class="tr-quit" title="Beenden">✕</button>
+            <div class="tr-progress-track"><div class="tr-progress-fill" id="sl-progress-fill"></div></div>
+            <div class="tr-clock" id="sl-clock">10:00</div>
+            <div class="tr-combo" id="sl-combo" hidden><span id="sl-combo-n">0</span>×</div>
+          </div>
+
+          <div class="card tr-stage" id="sl-stage">
+            <div class="tr-phase" id="sl-kind"></div>
+            <p class="tr-sentence" id="sl-prompt"></p>
+            <p class="tr-cue" id="sl-sub"></p>
+
+            <div id="sl-options" class="tr-options"></div>
+            <div id="sl-freetext" class="tr-freetext" hidden>
+              <input type="text" id="sl-input" autocomplete="off" autocapitalize="off"
+                     autocorrect="off" spellcheck="false" placeholder="Antwort…" />
+              <button id="sl-submit" class="primary">Prüfen</button>
+            </div>
+
+            <div class="tr-feedback" id="sl-feedback" hidden>
+              <div class="tr-feedback-line" id="sl-feedback-line"></div>
+              <div class="hint" id="sl-feedback-note"></div>
+              <button id="sl-next" class="primary">Weiter</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Słówka summary -->
+        <div id="sl-summary" hidden>
+          <div class="card tr-summary-card">
+            <div class="tr-zubr tr-zubr-big">📚</div>
+            <h2 id="sl-summary-title">Koniec!</h2>
+            <p class="hint" id="sl-summary-sub"></p>
+            <div id="sl-summary-tiles" class="stat-tiles"></div>
+            <div id="sl-summary-notes"></div>
+            <button id="sl-summary-done" class="primary">Fertig</button>
           </div>
         </div>
 

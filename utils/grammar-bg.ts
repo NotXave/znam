@@ -30,19 +30,36 @@ import type { VocabRank } from './grammar/generator'
 
 const GAME_KEY = 'grammarGame'
 
+/**
+ * Trening and Słówka keep SEPARATE streaks, so their state is namespaced by
+ * mode. The grammar entry keeps the bare language key it has always used, so
+ * existing streaks survive the upgrade untouched.
+ */
+export type GameMode = 'grammar' | 'vocab'
+
+const gameKeyFor = (lang: string, mode: GameMode) => (mode === 'grammar' ? lang : `${lang}:${mode}`)
+
 // ── game state (browser.storage.local, alongside settings) ──
 
-export async function getGameState(lang: string): Promise<GameState> {
+export async function getGameState(lang: string, mode: GameMode = 'grammar'): Promise<GameState> {
   const stored = await browser.storage.local.get(GAME_KEY)
   const all = (stored[GAME_KEY] as Record<string, GameState>) ?? {}
-  return all[lang] ?? newGameState(lang)
+  return all[gameKeyFor(lang, mode)] ?? newGameState(lang)
+}
+
+export async function saveGameStateFor(
+  lang: string,
+  mode: GameMode,
+  state: GameState,
+): Promise<void> {
+  const stored = await browser.storage.local.get(GAME_KEY)
+  const all = (stored[GAME_KEY] as Record<string, GameState>) ?? {}
+  all[gameKeyFor(lang, mode)] = state
+  await browser.storage.local.set({ [GAME_KEY]: all })
 }
 
 async function saveGameState(state: GameState): Promise<void> {
-  const stored = await browser.storage.local.get(GAME_KEY)
-  const all = (stored[GAME_KEY] as Record<string, GameState>) ?? {}
-  all[state.lang] = state
-  await browser.storage.local.set({ [GAME_KEY]: all })
+  await saveGameStateFor(state.lang, 'grammar', state)
 }
 
 // ── morph install (port 'grammar-setup') ────────────────────

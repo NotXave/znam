@@ -1,5 +1,6 @@
 import type { SessionResult } from './grammar/types'
 import type { CalibrationAnswer } from './calibration'
+import type { VocabResult } from './vocab-bg'
 
 // ── Word knowledge ──────────────────────────────────────────
 
@@ -130,6 +131,10 @@ export interface Settings {
   grammarSound: boolean
   /** Grammar game: confetti/shake animations (also honours prefers-reduced-motion). */
   grammarMotion: boolean
+  /** Vocabulary trainer: only drill words at or below this frequency rank. */
+  vocabMaxRank: number
+  /** Vocabulary trainer: length of one daily session, in minutes. */
+  vocabDailyMinutes: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -157,6 +162,8 @@ export const DEFAULT_SETTINGS: Settings = {
   grammarNewPerDay: 1,
   grammarSound: true,
   grammarMotion: true,
+  vocabMaxRank: 3000,
+  vocabDailyMinutes: 10,
 }
 
 // ── Lookup results (reused from manga-translator) ───────────
@@ -325,6 +332,12 @@ export type Message =
   | { type: 'GRAMMAR_SESSION_END'; payload: { lang: string; result: SessionResult } }
   /** Concept mastery + game state, for the home screen and concept map. */
   | { type: 'GRAMMAR_PROGRESS'; payload: { lang: string } }
+  /** Vocabulary trainer: build today's card set. */
+  | { type: 'VOCAB_SESSION_START'; payload: { lang: string; minutes: number } }
+  /** Vocabulary trainer: persist results (SRS + streak + XP). */
+  | { type: 'VOCAB_SESSION_END'; payload: { lang: string; result: VocabResult } }
+  /** Vocabulary trainer: home-screen state. */
+  | { type: 'VOCAB_PROGRESS'; payload: { lang: string } }
   /** Popup/command → content script. */
   | { type: 'TOGGLE_READER' }
   | { type: 'GET_READER_STATE' }

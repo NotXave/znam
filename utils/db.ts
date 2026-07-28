@@ -1,9 +1,13 @@
 import type { LibraryEntry, WordRecord } from './types'
 import type { ConceptProgress, SessionDay } from './grammar/types'
+import type { VocabCard } from './grammar/vocab'
 
 const DB_NAME = 'znam'
-/** v2 added the grammar-game stores: morph, grammar, drills, sessions. */
-const DB_VERSION = 2
+/**
+ * v2 added the grammar-game stores: morph, grammar, drills, sessions.
+ * v3 added `vocab` for the Słówka trainer.
+ */
+const DB_VERSION = 3
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -49,6 +53,11 @@ export function openDb(): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains('sessions')) {
           db.createObjectStore('sessions', { keyPath: ['lang', 'date'] })
+        }
+        // ── v3: vocabulary trainer ──
+        if (!db.objectStoreNames.contains('vocab')) {
+          const vocab = db.createObjectStore('vocab', { keyPath: ['lang', 'lemma'] })
+          vocab.createIndex('byDue', ['lang', 'due'], { unique: false })
         }
       }
       req.onsuccess = () => resolve(req.result)
@@ -431,6 +440,28 @@ export async function getDrillsSince(lang: string, sinceDate: string): Promise<D
 export async function getAllDrills(): Promise<DrillRow[]> {
   const db = await openDb()
   return reqResult(db.transaction('drills').objectStore('drills').getAll())
+}
+
+// ── vocab (per-word SRS cards for the Słówka trainer) ───────
+
+export async function getVocabCards(lang: string): Promise<VocabCard[]> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
+  return reqResult(db.transaction('vocab').objectStore('vocab').getAll(range))
+}
+
+export async function getAllVocabCards(): Promise<VocabCard[]> {
+  const db = await openDb()
+  return reqResult(db.transaction('vocab').objectStore('vocab').getAll())
+}
+
+export async function putVocabCards(cards: VocabCard[]): Promise<void> {
+  if (cards.length === 0) return
+  const db = await openDb()
+  const tx = db.transaction('vocab', 'readwrite')
+  const store = tx.objectStore('vocab')
+  for (const card of cards) store.put(card)
+  await txDone(tx)
 }
 
 // ── sessions (one row per completed day) ────────────────────

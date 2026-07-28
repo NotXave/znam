@@ -14,6 +14,7 @@ import {
 } from '../../utils/grammar/session'
 import { getSettings } from '../../utils/settings'
 import { CONCEPT_BY_ID } from '../../utils/grammar/curriculum'
+import { initSlowka, setSlowkaLang, startSlowka } from './slowka'
 
 /**
  * The Trening tab: a 15-minute daily Polish grammar game.
@@ -49,6 +50,7 @@ let replayQueue: Exercise[] = []
 
 export function setTreningLang(next: string): void {
   lang = next
+  setSlowkaLang(next)
 }
 
 function showScreen(name: Screen): void {
@@ -111,6 +113,18 @@ export async function renderTrening(): Promise<void> {
     ),
     tile(`${Math.round(totalSeconds / 60)}`, 'Minuten geübt'),
   ].join('')
+
+  // Both modes carry their own streak; the home screen shows them together so
+  // the split reads as two doors into one habit rather than two separate chores.
+  const vocab = await send({ type: 'VOCAB_PROGRESS', payload: { lang } })
+  $('tr-streak-grammar').textContent = game.streak > 0 ? `🔥 ${game.streak}` : ''
+  $('tr-streak-vocab').textContent = vocab?.streak > 0 ? `🔥 ${vocab.streak}` : ''
+
+  const perfect = $('tr-perfect-day')
+  const bothToday = game.lastDay === today && vocab?.streak > 0 && doneToday
+  perfect.hidden = !bothToday
+  perfect.className = bothToday ? 'tr-perfect' : 'hint'
+  if (bothToday) perfect.textContent = '✨ Perfekter Tag — beides erledigt.'
 
   $('tr-map').innerHTML = renderMap(concepts)
   $('tr-activity').innerHTML = renderActivity(days)
@@ -305,6 +319,7 @@ function renderExercise(ex: Exercise): void {
       btn.addEventListener('click', () => answerWith(btn.dataset.value ?? '', btn))
     }
   } else {
+    options.innerHTML = ''
     freetext.hidden = false
     const input = $<HTMLInputElement>('tr-input')
     input.value = ''
@@ -490,7 +505,8 @@ function renderSummary(summary: any, counted: boolean, seconds: number): void {
 
   const notes: string[] = []
   if (counted && summary?.streak) {
-    notes.push(`<div class="tr-streak-note">🔥 ${summary.streak} Tage in Folge!</div>`)
+    const d = summary.streak === 1 ? 'Tag' : 'Tage'
+    notes.push(`<div class="tr-streak-note">🔥 ${summary.streak} ${d} in Folge!</div>`)
   }
   if (summary?.freezeUsed) {
     notes.push('<div class="tr-streak-note">🧊 Ein Streak-Schutz hat gestern gerettet.</div>')
@@ -544,6 +560,8 @@ const esc = (s: string): string =>
 export function initTrening(): void {
   $('tr-install').addEventListener('click', installMorphData)
   $('tr-start').addEventListener('click', () => void startTraining())
+  $('sl-start').addEventListener('click', () => void startSlowka(() => void renderTrening()))
+  initSlowka(() => void renderTrening())
   $('tr-lesson-go').addEventListener('click', beginDrilling)
   $('tr-next').addEventListener('click', advance)
   $('tr-quit').addEventListener('click', quitSession)
