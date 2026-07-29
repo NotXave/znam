@@ -30,7 +30,7 @@ import {
   handleGrammarSetupPort,
   startGrammarSession,
 } from '../utils/grammar-bg'
-import { calibrationNext } from '../utils/calibration-bg'
+import { calibrationNext, invalidateKnownCache } from '../utils/calibration-bg'
 import { endVocabSession, startVocabSession, vocabProgress } from '../utils/vocab-bg'
 import {
   bandForRank,
@@ -535,6 +535,8 @@ export default defineBackground(() => {
       handleSetupPort(port, (lang) => {
         statusMaps.delete(lang)
         statusLoads.delete(lang)
+        // The word list was just replaced — calibration holds it in memory.
+        invalidateKnownCache()
       })
     } else if (port.name === 'grammar-setup') {
       handleGrammarSetupPort(port)

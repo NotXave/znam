@@ -6,8 +6,10 @@ const DB_NAME = 'znam'
 /**
  * v2 added the grammar-game stores: morph, grammar, drills, sessions.
  * v3 added `vocab` for the Słówka trainer.
+ * v4 added `known` — the dictionary's vocabulary judgement, which keeps the
+ *    trainers from drilling proper nouns the frequency list happens to rank.
  */
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -58,6 +60,10 @@ export function openDb(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains('vocab')) {
           const vocab = db.createObjectStore('vocab', { keyPath: ['lang', 'lemma'] })
           vocab.createIndex('byDue', ['lang', 'due'], { unique: false })
+        }
+        // ── v4: recognised-vocabulary list ──
+        if (!db.objectStoreNames.contains('known')) {
+          db.createObjectStore('known', { keyPath: ['lang', 'lemma'] })
         }
       }
       req.onsuccess = () => resolve(req.result)
@@ -188,11 +194,53 @@ export async function countLemmaRows(lang: string): Promise<number> {
 
 export async function clearLanguageData(lang: string): Promise<void> {
   const db = await openDb()
-  const tx = db.transaction(['lemmas', 'freq'], 'readwrite')
+  const tx = db.transaction(['lemmas', 'freq', 'known'], 'readwrite')
   const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
   tx.objectStore('lemmas').delete(range)
   tx.objectStore('freq').delete(range)
+  tx.objectStore('known').delete(range)
   await txDone(tx)
+}
+
+// ── known (lemmas a dictionary recognises as words) ─────────
+
+/**
+ * The vocabulary judgement the frequency list cannot make.
+ *
+ * OpenSubtitles ranks `liam` at 4000 and `boho` at 157; both are perfectly
+ * real tokens for the reader's comprehension score and perfectly useless as
+ * quiz items. This store holds the subset the source dictionary recognises as
+ * ordinary vocabulary, built by scripts/build-known-lemmas.mjs.
+ */
+export async function putKnownLemmas(lang: string, lemmas: string[]): Promise<void> {
+  if (lemmas.length === 0) return
+  const db = await openDb()
+  const tx = db.transaction('known', 'readwrite')
+  const store = tx.objectStore('known')
+  for (const lemma of lemmas) store.put({ lang, lemma })
+  await txDone(tx)
+}
+
+export async function countKnownRows(lang: string): Promise<number> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
+  return reqResult(db.transaction('known').objectStore('known').count(range))
+}
+
+/**
+ * The whole set for one language, or an EMPTY set when none is installed.
+ *
+ * Callers must treat empty as "no judgement available" and skip filtering
+ * rather than rejecting everything — otherwise an older install, or a language
+ * with no dictionary source, would silently get an empty trainer.
+ */
+export async function getKnownLemmas(lang: string): Promise<Set<string>> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
+  const rows = await reqResult<{ lemma: string }[]>(
+    db.transaction('known').objectStore('known').getAll(range),
+  )
+  return new Set(rows.map(r => r.lemma))
 }
 
 // ── freq (lemma frequency ranks) ────────────────────────────

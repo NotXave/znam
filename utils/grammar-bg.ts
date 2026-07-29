@@ -96,7 +96,7 @@ export function handleGrammarSetupPort(port: any): void {
       })
       post({
         type: 'DONE',
-        state: { lang: msg.lang, dictReady: true, dictForms: rows, freqReady: true, freqLemmas: 0, counts: { learning: 0, known: 0, ignored: 0 } },
+        state: { lang: msg.lang, dictReady: true, dictForms: rows, freqReady: true, freqLemmas: 0, knownLemmas: 0, counts: { learning: 0, known: 0, ignored: 0 } },
       })
     } catch (err: any) {
       post({ type: 'ERROR', error: err.message || String(err) })

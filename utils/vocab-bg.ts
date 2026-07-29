@@ -1,6 +1,7 @@
 import {
   getAllWords,
   getFreqRanks,
+  getKnownLemmas,
   getSessionDays,
   getTopLemmas,
   getVocabCards,
@@ -179,9 +180,12 @@ export async function startVocabSession(
 
   const cards = new Map((await getVocabCards(lang)).map(c => [c.lemma, c]))
   const want = Math.max(6, Math.round(minutes * CARDS_PER_MINUTE))
+  // Missing store (pre-v4 database) or no list for this language → empty set,
+  // which selectCards reads as "do not filter".
+  const known = await getKnownLemmas(lang).catch(() => new Set<string>())
 
   const picked = selectCards({
-    candidates, cards, maxRank, now: Date.now(), limit: want,
+    candidates, cards, maxRank, now: Date.now(), limit: want, known,
   })
   if (picked.length === 0) {
     return { error: 'Nichts fällig — alles wiederholt. Bis morgen!' }

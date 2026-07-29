@@ -1,4 +1,4 @@
-import { getLemmasAtRanks, countFreqRows } from './db'
+import { getLemmasAtRanks, countFreqRows, getKnownLemmas } from './db'
 import {
   MAX_ITEMS,
   PSEUDO_SHARE,
@@ -24,6 +24,32 @@ import {
  */
 
 let pseudoCache: string[] | null = null
+
+/**
+ * The recognised-vocabulary set, cached for the length of a quiz.
+ *
+ * ~12 k strings for Polish, read once rather than on each of the 25 items.
+ * An empty set means no list is installed, which must disable the filter — see
+ * `isRealWord`.
+ */
+let knownCache: { lang: string; set: Set<string> } | null = null
+
+async function knownFor(lang: string): Promise<Set<string>> {
+  if (knownCache?.lang === lang) return knownCache.set
+  let set = new Set<string>()
+  try {
+    set = await getKnownLemmas(lang)
+  } catch {
+    // store missing (pre-v4 database) — degrade to no filtering
+  }
+  knownCache = { lang, set }
+  return set
+}
+
+/** Reset between quizzes so a language reinstall is picked up. */
+export function invalidateKnownCache(): void {
+  knownCache = null
+}
 
 async function loadPseudowords(lang: string): Promise<string[]> {
   if (pseudoCache) return pseudoCache
@@ -89,7 +115,7 @@ export async function calibrationNext(
       ? SEED_RANKS[real.length]
       : jitterRank(nextTargetRank(post, maxRank), Math.random)
 
-  const item = await pickLemmaNear(lang, Math.min(target, maxRank), usedLemmas)
+  const item = await pickLemmaNear(lang, Math.min(target, maxRank), usedLemmas, await knownFor(lang))
   if (!item) return { done: true, estimate: summarize(post, maxRank) }
   return { done: false, item, asked, max: MAX_ITEMS }
 }
@@ -100,21 +126,39 @@ export async function calibrationNext(
  *
  * Returns undefined rather than repeating a word: asking the same lemma twice
  * gives no new information and reads as a bug to the learner.
+ *
+ * `known` filters out what the frequency list can't: OpenSubtitles ranks `boho`
+ * at 157 and `liam` at 4000, and asking whether you know a character's name
+ * measures nothing at all. An EMPTY set means no word list is installed, and
+ * then the filter is skipped rather than emptying the pool.
  */
-async function pickLemmaNear(
+export async function pickLemmaNear(
   lang: string,
   rank: number,
   used: string[],
+  known: Set<string> = new Set(),
 ): Promise<CalibrationSample | undefined> {
   const usedSet = new Set(used)
-  const offsets = [0, 3, -3, 8, -8, 20, -20, 50, -50, 120, -120, 300, -300]
-  const wanted = offsets
-    .map(o => Math.max(1, rank + o))
-    .filter((r, i, arr) => arr.indexOf(r) === i)
+  const filtering = known.size > 0
+  const acceptable = (lemma: string) => !usedSet.has(lemma) && (!filtering || known.has(lemma))
 
-  const rows = await getLemmasAtRanks(lang, wanted)
-  for (const row of rows) {
-    if (!usedSet.has(row.lemma)) return { lemma: row.lemma, rank: row.rank }
+  // Two rings. The first is tight, so the item sits near the rank the posterior
+  // actually asked for; the second is a long reach used only when the first
+  // finds nothing, which the ~10 % rejection rate in the top band makes rare.
+  for (const offsets of [
+    [0, 3, -3, 8, -8, 20, -20, 50, -50, 120, -120, 300, -300],
+    [600, -600, 1200, -1200, 2500, -2500, 5000, -5000],
+  ]) {
+    const wanted = offsets
+      .map(o => Math.max(1, rank + o))
+      .filter((r, i, arr) => arr.indexOf(r) === i)
+    const rows = await getLemmasAtRanks(lang, wanted)
+    const hit = rows.find(r => acceptable(r.lemma))
+    if (hit) return { lemma: hit.lemma, rank: hit.rank }
   }
+
+  // Deliberately no fall-back to a rejected lemma. Ending the quiz one item
+  // early costs a little precision; asking "do you know *hombre*?" and folding
+  // the answer into the estimate costs correctness.
   return undefined
 }

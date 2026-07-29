@@ -69,14 +69,26 @@ export const MAX_MAX_RANK = 5000
  * 3000 the OpenSubtitles list starts yielding slang and one-off oddities
  * (rank 3000 is *świr*, rank 8000 is *kaczek*), and drilling those is a waste
  * of a session. `ignored` words and the profanity blocklist are dropped too.
+ *
+ * `known` is the dictionary's separate judgement about what is a word at all.
+ * A frequency ceiling alone does not get you there — OpenSubtitles ranks `boho`
+ * at 157 and `marshall` at 3635, comfortably inside any sane ceiling. An EMPTY
+ * set means no word list is installed and the filter is skipped, so an older
+ * install degrades to the previous behaviour instead of an empty session.
  */
-export function eligible(candidates: VocabCandidate[], maxRank: number): VocabCandidate[] {
+export function eligible(
+  candidates: VocabCandidate[],
+  maxRank: number,
+  known?: Set<string>,
+): VocabCandidate[] {
+  const filtering = !!known && known.size > 0
   return candidates.filter(c =>
     c.rank > 0 &&
     c.rank <= maxRank &&
     c.status !== 'ignored' &&
     !BLOCKED_LEMMAS.has(c.lemma) &&
-    c.lemma.length > 1,
+    c.lemma.length > 1 &&
+    (!filtering || known!.has(c.lemma)),
   )
 }
 
@@ -93,6 +105,8 @@ export interface SelectionInput {
   maxRank: number
   now: number
   limit: number
+  /** Recognised vocabulary; empty or omitted disables the filter. */
+  known?: Set<string>
 }
 
 /**
@@ -104,8 +118,8 @@ export interface SelectionInput {
  *   new in-band words as filler.
  */
 export function selectCards(input: SelectionInput): VocabCandidate[] {
-  const { candidates, cards, maxRank, now, limit } = input
-  const pool = eligible(candidates, maxRank)
+  const { candidates, cards, maxRank, now, limit, known } = input
+  const pool = eligible(candidates, maxRank, known)
 
   const score = (c: VocabCandidate): number => {
     const card = cards.get(c.lemma)

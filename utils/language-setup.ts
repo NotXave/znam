@@ -2,9 +2,11 @@ import type { LanguageState, SetupEvent, SetupRequest, WordStatus } from './type
 import {
   clearLanguageData,
   countFreqRows,
+  countKnownRows,
   countLemmaRows,
   getAllWords,
   putFreqRows,
+  putKnownLemmas,
   putLemmaRows,
 } from './db'
 import { invalidateLemmaCache } from './lemmatizer'
@@ -17,9 +19,10 @@ const DATA_BASE = 'https://raw.githubusercontent.com/NotXave/znam/main/public/da
 const INSERT_BATCH = 5000
 
 export async function languageState(lang: string): Promise<LanguageState> {
-  const [dictForms, freqLemmas, words] = await Promise.all([
+  const [dictForms, freqLemmas, knownLemmas, words] = await Promise.all([
     countLemmaRows(lang),
     countFreqRows(lang),
+    countKnownRows(lang).catch(() => 0), // store absent on a pre-v4 database
     getAllWords(lang),
   ])
   const counts = { learning: 0, known: 0, ignored: 0 }
@@ -31,6 +34,7 @@ export async function languageState(lang: string): Promise<LanguageState> {
     dictForms,
     freqReady: freqLemmas > 0,
     freqLemmas,
+    knownLemmas,
     calibratedAt: (langMeta as any)?.[lang]?.calibratedAt,
     counts,
   }
@@ -90,7 +94,7 @@ async function fetchWithProgress(
 /** Bundled artifact if the extension ships one, otherwise the repo download. */
 async function loadArtifact(
   lang: string,
-  kind: 'lemmas' | 'freq',
+  kind: 'lemmas' | 'freq' | 'known',
   label: string,
   post: (e: SetupEvent) => void,
 ): Promise<string> {
@@ -107,10 +111,39 @@ async function loadArtifact(
   return fetchWithProgress(`${DATA_BASE}/${lang}.${kind}.tsv`, label, post)
 }
 
+/**
+ * The known-lemma list, or null when the language has none.
+ *
+ * Optional on purpose: it only exists for languages with a curated
+ * morphological dictionary behind them, and a language without one must still
+ * install cleanly. Absence disables the trainers' filter, it does not fail.
+ */
+async function loadKnownArtifact(
+  lang: string,
+  post: (e: SetupEvent) => void,
+): Promise<string | null> {
+  try {
+    return await loadArtifact(lang, 'known', 'Wortliste', post)
+  } catch {
+    return null
+  }
+}
+
+/** Parse a one-column list, skipping blanks and comments. */
+function parseTsvLines(text: string): string[] {
+  const out: string[] = []
+  for (const line of text.split('\n')) {
+    const s = line.trim()
+    if (s && !s.startsWith('#')) out.push(s)
+  }
+  return out
+}
+
 async function installLanguageData(
   lang: string,
   lemmasTsv: string,
   freqTsv: string,
+  knownTsv: string | null,
   post: (e: SetupEvent) => void,
 ): Promise<void> {
   post({ type: 'PROGRESS', step: 'parse', pct: 0, detail: 'Parsing dictionaries' })
@@ -119,12 +152,16 @@ async function installLanguageData(
     lemma,
     rank: Number(rank),
   })).filter(r => Number.isFinite(r.rank))
+  const knownRows = knownTsv ? parseTsvLines(knownTsv) : []
   post({ type: 'PROGRESS', step: 'parse', pct: 100, detail: `${lemmaRows.length} forms, ${freqRows.length} lemmas` })
 
   // Replace any previous data for this language
   await clearLanguageData(lang)
 
-  const totalBatches = Math.ceil(lemmaRows.length / INSERT_BATCH) + Math.ceil(freqRows.length / INSERT_BATCH)
+  const totalBatches =
+    Math.ceil(lemmaRows.length / INSERT_BATCH) +
+    Math.ceil(freqRows.length / INSERT_BATCH) +
+    Math.ceil(knownRows.length / INSERT_BATCH)
   let doneBatches = 0
   const progress = (detail: string) => {
     doneBatches++
@@ -144,6 +181,10 @@ async function installLanguageData(
     await putFreqRows(lang, freqRows.slice(i, i + INSERT_BATCH))
     progress(`Storing frequency ranks (${Math.min(i + INSERT_BATCH, freqRows.length)}/${freqRows.length})`)
   }
+  for (let i = 0; i < knownRows.length; i += INSERT_BATCH) {
+    await putKnownLemmas(lang, knownRows.slice(i, i + INSERT_BATCH))
+    progress(`Storing word list (${Math.min(i + INSERT_BATCH, knownRows.length)}/${knownRows.length})`)
+  }
 
   invalidateLemmaCache(lang)
 }
@@ -158,11 +199,16 @@ export function handleSetupPort(port: any, onInstalled?: (lang: string) => void)
       if (msg.type === 'SETUP_LANGUAGE') {
         const lemmasTsv = await loadArtifact(msg.lang, 'lemmas', 'Lemma dictionary', post)
         const freqTsv = await loadArtifact(msg.lang, 'freq', 'Frequency list', post)
-        await installLanguageData(msg.lang, lemmasTsv, freqTsv, post)
+        const knownTsv = await loadKnownArtifact(msg.lang, post)
+        await installLanguageData(msg.lang, lemmasTsv, freqTsv, knownTsv, post)
         onInstalled?.(msg.lang)
         post({ type: 'DONE', state: await languageState(msg.lang) })
       } else if (msg.type === 'SETUP_LANGUAGE_LOCAL') {
-        await installLanguageData(msg.lang, msg.lemmasTsv, msg.freqTsv, post)
+        // Still try for the word list: for a bundled language it comes from
+        // inside the extension, so a local install stays offline and keeps the
+        // filter. For anything else this returns null and the filter is skipped.
+        const knownTsv = await loadKnownArtifact(msg.lang, post)
+        await installLanguageData(msg.lang, msg.lemmasTsv, msg.freqTsv, knownTsv, post)
         onInstalled?.(msg.lang)
         post({ type: 'DONE', state: await languageState(msg.lang) })
       }

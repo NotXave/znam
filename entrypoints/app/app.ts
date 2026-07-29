@@ -650,10 +650,16 @@ async function renderLanguageState() {
     <h2>${LANGUAGES.find(([c]) => c === lang)?.[1] ?? lang}</h2>
     <div>Lemma dictionary: <b>${state.dictReady ? `${state.dictForms.toLocaleString()} forms` : 'not installed'}</b></div>
     <div>Frequency list: <b>${state.freqReady ? `${state.freqLemmas.toLocaleString()} lemmas` : 'not installed'}</b></div>
+    <div>Word list: <b>${state.knownLemmas > 0 ? `${state.knownLemmas.toLocaleString()} lemmas` : 'not installed'}</b></div>
     <div>Words: <b class="status-known">${state.counts.known.toLocaleString()} known</b> ·
       <b class="status-learning">${state.counts.learning.toLocaleString()} learning</b> ·
       ${state.counts.ignored.toLocaleString()} ignored</div>
     ${state.calibratedAt ? `<div class="hint">Calibrated ${new Date(state.calibratedAt).toLocaleDateString()}</div>` : ''}
+    ${state.dictReady && state.knownLemmas === 0
+      ? `<div class="hint">The word list is new. Reinstall the language data below and
+           Calibrate and Słówka will stop asking about names like <i>Liam</i> and
+           <i>Marshall</i>, which the frequency list carries but nobody needs to study.</div>`
+      : ''}
   `
 }
 

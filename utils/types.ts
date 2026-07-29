@@ -76,6 +76,11 @@ export interface LanguageState {
   dictForms: number
   freqReady: boolean
   freqLemmas: number
+  /**
+   * Size of the recognised-word list. Zero means the trainers cannot tell a
+   * word from a name, which is the state every pre-v4 install starts in.
+   */
+  knownLemmas: number
   calibratedAt?: number
   counts: { learning: number; known: number; ignored: number }
 }

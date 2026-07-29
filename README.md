@@ -153,6 +153,7 @@ this repo (or installed from local files in the Languages tab):
 | `<lang>.freq.tsv` | `lemma <TAB> rank`, OpenSubtitles frequencies merged by lemma |
 | `<lang>.morph.tsv` | `lemma <TAB> pos <TAB> tag <TAB> form` — the tagged inflection table the grammar game drills (Polish only) |
 | `<lang>.pseudo.tsv` | invented but plausible non-words, for the calibration quiz's guessing-rate correction |
+| `<lang>.known.tsv` | one lemma per line — the words a dictionary recognises, so the trainers never drill a name |
 
 They are built offline by:
 
@@ -160,8 +161,21 @@ They are built offline by:
 node scripts/build-lang-data.mjs pl     # reader: lemmas + frequencies
 npm run build:morph                     # Trening: tagged inflection table
 node scripts/build-pseudowords.mjs pl   # Calibrate: invented words
+npm run build:known                     # Trening + Calibrate: what counts as a word
 node scripts/build-prefix-families.mjs  # candidates for hand-verification
 ```
+
+`known.tsv` exists because a frequency list is not a vocabulary. OpenSubtitles
+ranks *boho* at 157 and *liam* at 4000; for the reader's comprehension score
+those are legitimately tokens you understand, but asking "do you know *liam*?"
+in a vocabulary test measures nothing. The spaCy lookups **preserve case**, and
+81 374 of 213 124 noun lemmas are capitalised in every entry that produces them
+(`Komarowo`, `Marshall`), while ordinary words appear lowercase or in both
+casings (`Kot|kot`) — so a lowercase entry somewhere is the signal. Membership
+alone is not: PoliMorf is a full morphological dictionary and inflects proper
+nouns too. Closed-class words the POS tables omit (`by`, `trzeba`, `przecież`)
+are hand-listed in the script, and the UniMorph table is unioned back in to
+recover words Polish conventionally capitalises (`Amerykanin`, `Rosjanin`).
 
 The morphology table comes from [UniMorph](https://github.com/unimorph/pol)
 (CC-BY-SA), intersected with the top-2000 frequency lemmas — ~23k rows covering
