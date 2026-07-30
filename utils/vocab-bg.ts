@@ -10,6 +10,13 @@ import {
   putWords,
 } from './db'
 import { translateBatch } from './translate'
+import {
+  fetchGlosses,
+  needGlosses,
+  type GlossOptions,
+  type GlossOutcome,
+  type TranslateFn,
+} from './grammar/glosses'
 import { getGameState, saveGameStateFor } from './grammar-bg'
 import { review, newProgress } from './grammar/srs'
 import { dayKey } from './grammar/session'
@@ -88,69 +95,57 @@ async function gatherCandidates(lang: string, maxRank: number): Promise<VocabCan
 // ── translations ────────────────────────────────────────────
 
 /**
- * Give up on fetching glosses after this long.
- *
- * Without a budget, a blocked or slow network turns session start into a
- * five-minute hang: the batch endpoint times out, the code falls back to one
- * request per word, and each of those times out in turn. Measured at 317 s
- * before this cap existed.
- */
-const TRANSLATE_BUDGET_MS = 8000
-
-/**
  * Fill in missing German glosses, then persist them.
  *
- * TRANSLATE_BATCH cannot be reused here: it tries DeepL first, which is
- * serialized at >=1.2 s per chunk and would take minutes for a session's worth
- * of words. This calls Google's batch endpoint directly (350 ms throttle).
+ * `translateBatch` cannot be swapped for TRANSLATE_BATCH: that path tries DeepL
+ * first, which is serialized at >=1.2 s per chunk and would take minutes for a
+ * session's worth of words. This goes through Google's batch endpoint (350 ms
+ * throttle).
  *
- * Chunks are small on purpose. The batch endpoint occasionally mangles the
- * separator and the fallback is one request per word, so a small chunk keeps
- * the blast radius of a bad response down.
+ * The chunking, budget and response validation live in grammar/glosses.ts,
+ * where they can be tested against a fake. What is left here is the part that
+ * genuinely needs IndexedDB.
+ *
+ * `translate` is injectable so that this function, too, can be driven without
+ * a network.
  */
-async function ensureTranslations(
+export async function ensureTranslations(
   lang: string,
   nativeLang: string,
   cards: VocabCandidate[],
-): Promise<void> {
-  const missing = cards.filter(c => !c.translation).slice(0, 60)
-  if (missing.length === 0) return
+  translate: TranslateFn = translateBatch,
+  opts: GlossOptions = {},
+): Promise<GlossOutcome> {
+  const missing = needGlosses(cards)
+  if (missing.length === 0) {
+    // Nothing to ask for. Worth stating explicitly: the offline path must not
+    // touch the network at all, or a learner with a full set of stored glosses
+    // still waits on a dead endpoint.
+    return { glosses: new Map(), requested: 0, requests: 0, timedOut: false }
+  }
 
-  const CHUNK = 25
-  const now = Date.now()
-  const deadline = now + TRANSLATE_BUDGET_MS
+  const now = opts.now?.() ?? Date.now()
+  const outcome = await fetchGlosses(
+    missing.map(c => c.lemma), lang, nativeLang, translate, opts,
+  )
+  if (outcome.glosses.size === 0) return outcome
+
   const records: WordRecord[] = []
-
-  for (let i = 0; i < missing.length; i += CHUNK) {
-    if (Date.now() > deadline) break
-    const batch = missing.slice(i, i + CHUNK)
-    let out: string[] = []
-    try {
-      out = await Promise.race([
-        translateBatch(batch.map(c => c.lemma), lang, nativeLang),
-        new Promise<string[]>((_, reject) =>
-          setTimeout(() => reject(new Error('translate budget')), Math.max(500, deadline - Date.now())),
-        ),
-      ])
-    } catch {
-      break // offline or throttled — use whatever glosses we already have
-    }
-    batch.forEach((c, j) => {
-      const t = (out[j] ?? '').trim()
-      if (!t || t.toLowerCase() === c.lemma.toLowerCase()) return
-      c.translation = t
-      // Persist, so the gloss is never fetched twice. Both translation caches
-      // are in-memory and die with the service worker.
-      records.push({
-        lang, lemma: c.lemma,
-        status: c.status ?? 'learning',
-        level: (c.level as any) ?? 1,
-        translation: t,
-        context: c.context,
-        lookups: c.lookups,
-        source: 'manual',
-        createdAt: now, updatedAt: now,
-      })
+  for (const c of missing) {
+    const gloss = outcome.glosses.get(c.lemma)
+    if (!gloss) continue
+    c.translation = gloss
+    // Persist, so the gloss is never fetched twice. Both translation caches are
+    // in-memory and die with the service worker.
+    records.push({
+      lang, lemma: c.lemma,
+      status: c.status ?? 'learning',
+      level: (c.level as any) ?? 1,
+      translation: gloss,
+      context: c.context,
+      lookups: c.lookups,
+      source: 'manual',
+      createdAt: now, updatedAt: now,
     })
   }
 
@@ -161,6 +156,7 @@ async function ensureTranslations(
     return prev ? { ...prev, translation: r.translation, updatedAt: now } : r
   })
   await putWords(merged)
+  return outcome
 }
 
 // ── session ─────────────────────────────────────────────────

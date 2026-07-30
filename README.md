@@ -186,8 +186,9 @@ case each governs) are hand-authored in `utils/grammar/closed-class.ts`.
 ## Tests
 
 ```sh
-npm test              # node --test, zero dependencies
-npm run audit:grammar # sample real generated exercises for human review
+npm test               # node --test, zero dependencies
+npm run audit:grammar  # sample real generated exercises for human review
+npm run smoke:translate # hits the live translation endpoint
 ```
 
 The grammar modules under `utils/grammar/` are pure functions, which is what
@@ -195,6 +196,13 @@ makes them testable without a browser or a test framework — the suite runs on
 Node 22's built-in runner and native TypeScript type-stripping. `audit:grammar`
 exists because no unit test catches a sentence that is perfectly inflected and
 semantically absurd; read its output whenever you add a template.
+
+`smoke:translate` covers the half of Słówka's gloss fetching that fakes cannot:
+it runs the real `translateBatch` through the real `fetchGlosses` against the
+live endpoint and checks that answers still line up with the words they gloss.
+The failure modes fakes *are* needed for — a hanging endpoint, a mangled
+separator, a response that echoes its input — live in `glosses.test.ts`,
+including the 317-second session-start hang as a regression test.
 
 Sources: Polish from [spaCy lookups](https://github.com/explosion/spacy-lookups-data)
 (PoliMorf, BSD), other languages from

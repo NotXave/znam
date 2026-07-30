@@ -17,7 +17,8 @@
     "test": "node --experimental-strip-types --import ./scripts/test/resolve-ts.mjs --test scripts/test/*.test.ts",
     "audit:grammar": "node --experimental-strip-types --import ./scripts/test/resolve-ts.mjs scripts/grammar-audit.ts",
     "build:morph": "node scripts/build-morph-data.mjs pl",
-    "build:known": "node scripts/build-known-lemmas.mjs pl"
+    "build:known": "node scripts/build-known-lemmas.mjs pl",
+    "smoke:translate": "node --experimental-strip-types --import ./scripts/test/resolve-ts.mjs scripts/smoke-translate.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
