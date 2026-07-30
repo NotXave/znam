@@ -16,6 +16,7 @@ import { getSettings } from '../../utils/settings'
 import { CONCEPT_BY_ID } from '../../utils/grammar/curriculum'
 import { initSlowka, setSlowkaLang, startSlowka } from './slowka'
 import { banner, confetti, loadCelebrationSettings, shake, sounds } from './celebrate'
+import { icon, zubrSays } from './icons'
 
 /**
  * The Trening tab: a 15-minute daily Polish grammar game.
@@ -35,7 +36,7 @@ const PHASE_LABEL: Record<string, string> = {
   warmup: 'Aufwärmen',
   lesson: 'Neues Thema',
   drill: 'Training',
-  boss: '👹 Boss',
+  boss: 'Boss',
 }
 
 let lang = 'pl'
@@ -82,8 +83,9 @@ export async function renderTrening(): Promise<void> {
   const rank = rankFor(game.xp)
   const upcoming = nextRank(game.xp)
 
-  $('tr-streak').querySelector('.tr-streak-n')!.textContent = String(game.streak)
-  $('tr-streak').classList.toggle('tr-streak-cold', game.streak === 0)
+  // A chip reading "0" is noise. On day one there is no streak to show yet.
+  $('tr-streak').hidden = game.streak === 0
+  $('tr-streak').querySelector('.tr-streak-n')!.textContent = `${game.streak} ${game.streak === 1 ? 'Tag' : 'Tage'}`
   $('tr-rank-title').textContent = rank.titlePl
   $('tr-rank-xp').textContent = upcoming
     ? `${game.xp} / ${upcoming.minXp} XP`
@@ -123,14 +125,15 @@ export async function renderTrening(): Promise<void> {
   // Both modes carry their own streak; the home screen shows them together so
   // the split reads as two doors into one habit rather than two separate chores.
   const vocab = await send({ type: 'VOCAB_PROGRESS', payload: { lang } })
-  $('tr-streak-grammar').textContent = game.streak > 0 ? `🔥 ${game.streak}` : ''
-  $('tr-streak-vocab').textContent = vocab?.streak > 0 ? `🔥 ${vocab.streak}` : ''
+  const streakChip = (n: number) => (n > 0 ? `${icon('flame', 12)} ${n} Tage` : '')
+  $('tr-streak-grammar').innerHTML = streakChip(game.streak)
+  $('tr-streak-vocab').innerHTML = streakChip(vocab?.streak ?? 0)
 
   const perfect = $('tr-perfect-day')
   const bothToday = game.lastDay === today && vocab?.streak > 0 && doneToday
   perfect.hidden = !bothToday
   perfect.className = bothToday ? 'tr-perfect' : 'hint'
-  if (bothToday) perfect.textContent = '✨ Perfekter Tag — beides erledigt.'
+  if (bothToday) perfect.innerHTML = `${icon('spark', 14)} Perfekter Tag — beides erledigt.`
 
   $('tr-map').innerHTML = renderMap(concepts)
   $('tr-activity').innerHTML = renderActivity(days)
@@ -445,7 +448,11 @@ function answerWith(value: string, btn?: HTMLButtonElement): void {
   const voice = result.correct
     ? zubrLine(result.nearMiss ? 'nearMiss' : ex.phase === 'boss' ? 'bossHit' : 'correct')
     : zubrLine('wrong')
-  line.textContent = result.correct ? `🦬 ${voice}` : `🦬 ${voice}  →  ${ex.answer}`
+  // innerHTML rather than textContent because the mark is inline SVG. The
+  // answer is escaped; the voice line is our own authored German.
+  line.innerHTML = result.correct
+    ? zubrSays(voice)
+    : zubrSays(`${voice} <span class="tr-answer">→ ${esc(ex.answer)}</span>`)
   $('tr-feedback-note').textContent = result.noteDe ?? ''
   $('tr-feedback').hidden = false
   $('tr-hint-btn').hidden = true
@@ -525,7 +532,7 @@ async function finishSession(): Promise<void> {
   if (summary?.rankId && rankAtStart && summary.rankId !== rankAtStart) {
     sounds.levelUp()
     confetti(80)
-    banner(`🏆 Neuer Rang: ${RANKS.find(r => r.id === summary.rankId)?.titlePl ?? ''}`)
+    banner(`Neuer Rang: ${RANKS.find(r => r.id === summary.rankId)?.titlePl ?? ''}`, 'trophy')
   }
   state = null
   current = null
@@ -534,7 +541,7 @@ async function finishSession(): Promise<void> {
 function renderSummary(summary: any, counted: boolean, seconds: number): void {
   showScreen('summary')
   $('tr-summary-title').textContent = summary?.total > 0 ? 'Koniec!' : 'Bis zum nächsten Mal!'
-  $('tr-summary-sub').textContent = `🦬 ${zubrLine('sessionEnd')}`
+  $('tr-summary-sub').innerHTML = zubrSays(zubrLine('sessionEnd'))
 
   const acc = summary?.total > 0 ? Math.round((summary.correct / summary.total) * 100) : 0
   $('tr-summary-tiles').innerHTML = [
@@ -548,10 +555,10 @@ function renderSummary(summary: any, counted: boolean, seconds: number): void {
   const notes: string[] = []
   if (counted && summary?.streak) {
     const d = summary.streak === 1 ? 'Tag' : 'Tage'
-    notes.push(`<div class="tr-streak-note">🔥 ${summary.streak} ${d} in Folge!</div>`)
+    notes.push(`<div class="tr-streak-note">${icon('flame', 16)} ${summary.streak} ${d} in Folge!</div>`)
   }
   if (summary?.freezeUsed) {
-    notes.push('<div class="tr-streak-note">🧊 Ein Streak-Schutz hat gestern gerettet.</div>')
+    notes.push(`<div class="tr-streak-note">${icon('freeze', 16)} Ein Streak-Schutz hat gestern gerettet.</div>`)
   }
   if (summary?.streakBroken) {
     notes.push('<div class="hint">Die Serie ist gerissen — heute fängt eine neue an.</div>')
@@ -559,7 +566,7 @@ function renderSummary(summary: any, counted: boolean, seconds: number): void {
   const unlocked: string[] = summary?.achievements ?? []
   for (const id of unlocked) {
     const a = ACHIEVEMENTS.find(x => x.id === id)
-    if (a) notes.push(`<div class="tr-achievement">🏅 <b>${esc(a.titleDe)}</b> — ${esc(a.descDe)}</div>`)
+    if (a) notes.push(`<div class="tr-achievement">${icon('medal', 16)}<span><b>${esc(a.titleDe)}</b> — ${esc(a.descDe)}</span></div>`)
   }
   $('tr-summary-achievements').innerHTML = notes.join('')
 

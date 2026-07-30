@@ -1,4 +1,5 @@
 import { getSettings } from '../../utils/settings'
+import { icon, type IconName } from './icons'
 
 /**
  * The celebratory layer: confetti, blips, screen shake.
@@ -75,7 +76,21 @@ export const sounds = {
 
 // ── confetti ────────────────────────────────────────────────
 
-const CONFETTI_COLORS = ['#d8a531', '#5d9e4a', '#3987e5', '#9085e9', '#e66767']
+/**
+ * Confetti colours come from the theme rather than being hardcoded, so a burst
+ * in Sepia is not a burst of Midnight's palette landing on a cream page.
+ */
+function confettiColors(): string[] {
+  const cs = getComputedStyle(document.documentElement)
+  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback
+  return [
+    v('--accent', '#c8963e'),
+    v('--ok', '#5f9e57'),
+    v('--boss', '#8b83c9'),
+    v('--c-page', '#5b9bd8'),
+    v('--ink-2', '#b3b9c2'),
+  ]
+}
 
 /**
  * Drop a burst of confetti. Elements remove themselves when their animation
@@ -85,12 +100,13 @@ export function confetti(count = 40): void {
   if (!motionAllowed()) return
   const layer = document.createElement('div')
   layer.className = 'confetti-layer'
+  const colors = confettiColors()
 
   for (let i = 0; i < count; i++) {
     const bit = document.createElement('i')
     bit.className = 'confetti-bit'
     bit.style.left = `${Math.random() * 100}%`
-    bit.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length]
+    bit.style.background = colors[i % colors.length]
     bit.style.animationDelay = `${Math.random() * 0.4}s`
     bit.style.animationDuration = `${1.6 + Math.random() * 1.2}s`
     bit.style.transform = `rotate(${Math.random() * 360}deg)`
@@ -112,10 +128,15 @@ export function shake(el: HTMLElement): void {
 }
 
 /** A brief full-width banner, for level-ups and achievements. */
-export function banner(text: string): void {
+export function banner(text: string, mark?: IconName): void {
   const el = document.createElement('div')
   el.className = 'celebrate-banner'
-  el.textContent = text
+  // The label goes in via textContent so a rank title can never inject markup;
+  // the icon is prepended separately.
+  const label = document.createElement('span')
+  label.textContent = text
+  if (mark) el.innerHTML = icon(mark, 16)
+  el.appendChild(label)
   document.body.appendChild(el)
   setTimeout(() => el.remove(), 2600)
 }

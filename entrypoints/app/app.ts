@@ -11,6 +11,7 @@ import { difficultyLabel, rescoreLemmaCounts } from '../../utils/scoring'
 import { parseVocabFile, wordsToAnki, wordsToCsv, type ParsedVocabFile } from '../../utils/csv-import'
 import type { CalibrationAnswer, CalibrationSample, SizeEstimate } from '../../utils/calibration'
 import { initTrening, renderTrening, setTreningLang } from './trening'
+import { icon, mountIcons } from './icons'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
@@ -117,7 +118,7 @@ async function renderStats() {
     .join('')
 
   renderComprehensionCard('stats-youtube', s.youtube, 'YouTube videos you watch', 'Open videos or Shorts (with subtitles) — each one watched counts.')
-  renderComprehensionCard('stats-netflix', s.netflix, 'Netflix you watch (znam-transcribed)', 'Turn on 🎙️ Transcribe on a Netflix watch page — each session watched counts.')
+  renderComprehensionCard('stats-netflix', s.netflix, 'Netflix you watch (znam-transcribed)', 'Turn on Transcribe on a Netflix watch page — each session watched counts.')
 
   const lib = s.library
   document.getElementById('stats-reading')!.innerHTML = `
@@ -191,7 +192,7 @@ function renderComprehensionCard(
     const left = stat.unlockAt - stat.count
     const pctBar = Math.round((stat.count / stat.unlockAt) * 100)
     el.innerHTML = `
-      <div>🔒 Watch <b>${left}</b> more to unlock your comprehension estimate.</div>
+      <div>${icon('lock', 13)} Watch <b>${left}</b> more to unlock your comprehension estimate.</div>
       <div class="bar-row" style="margin-top:8px">
         <span class="bar-track"><span class="bar-fill" style="width:${pctBar}%;background:#2d4a77"></span></span>
         <span class="bar-num">${stat.count}/${stat.unlockAt}</span>
@@ -434,7 +435,7 @@ const SOURCE_LABELS: Record<string, string> = {
 function renderDeepStats(d: DeepStats, s: Stats) {
   VZ = vizColors() // re-read: the theme may have changed since module load
   document.getElementById('stats-tiles2')!.innerHTML =
-    tile(d.streak ? `🔥 ${d.streak}` : '0', 'Day streak') +
+    tile(d.streak ? `${icon('flame', 18)} ${d.streak}` : '0', 'Day streak') +
     tile('+' + d.knownThisMonth.toLocaleString(), 'Marked known (30 days)') +
     tile(d.totalLookups.toLocaleString(), 'Total lookups') +
     tile(s.library.total.toLocaleString(), 'Items in library')
@@ -825,6 +826,9 @@ function calRenderResult() {
 // ── Wire-up ─────────────────────────────────────────────────
 
 async function init() {
+  // Fill the [data-icon] placeholders in index.html before anything renders,
+  // so no screen ever flashes with empty icon slots.
+  mountIcons()
   const langSel = $<HTMLSelectElement>('lang-select')
   for (const [code, name] of LANGUAGES) {
     const opt = document.createElement('option')

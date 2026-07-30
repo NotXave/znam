@@ -3,6 +3,7 @@ import type { VocabExercise } from '../../utils/grammar/vocab'
 import { grade, gradeChoice } from '../../utils/grammar/grading'
 import { comboMultiplier, zubrLine } from '../../utils/grammar/gamify'
 import { confetti, sounds } from './celebrate'
+import { icon, zubrSays } from './icons'
 
 /**
  * Słówka — the vocabulary trainer's runtime.
@@ -169,7 +170,9 @@ function answer(value: string, btn?: HTMLButtonElement): void {
   const line = $('sl-feedback-line')
   line.className = `tr-feedback-line ${result.correct ? 'tr-ok' : 'tr-bad'}`
   const voice = zubrLine(result.correct ? (result.nearMiss ? 'nearMiss' : 'correct') : 'wrong')
-  line.textContent = result.correct ? `📚 ${voice}` : `📚 ${voice}  →  ${ex.answer}`
+  line.innerHTML = result.correct
+    ? zubrSays(voice)
+    : zubrSays(`${voice} <span class="tr-answer">→ ${esc(ex.answer)}</span>`)
   $('sl-feedback-note').textContent = result.noteDe ?? ''
   $('sl-feedback').hidden = false
   $<HTMLButtonElement>('sl-next').focus()
@@ -210,7 +213,7 @@ async function finish(): Promise<void> {
   show('sl-summary')
   const acc = summary?.total > 0 ? Math.round((summary.correct / summary.total) * 100) : 0
   $('sl-summary-title').textContent = attempts.length > 0 ? 'Koniec!' : 'Bis zum nächsten Mal!'
-  $('sl-summary-sub').textContent = `📚 ${zubrLine('sessionEnd')}`
+  $('sl-summary-sub').innerHTML = zubrSays(zubrLine('sessionEnd'))
   $('sl-summary-tiles').innerHTML = [
     tile(`+${summary?.xp ?? 0}`, 'XP'),
     tile(`${summary?.correct ?? 0}/${summary?.total ?? 0}`, 'richtig'),
@@ -228,10 +231,10 @@ async function finish(): Promise<void> {
   const notes: string[] = []
   if (summary?.streak) {
     const d = summary.streak === 1 ? 'Tag' : 'Tage'
-    notes.push(`<div class="tr-streak-note">🔥 ${summary.streak} ${d} Słówka in Folge!</div>`)
+    notes.push(`<div class="tr-streak-note">${icon('flame', 16)} ${summary.streak} ${d} Słówka in Folge!</div>`)
   }
   if (summary?.perfectDay) {
-    notes.push('<div class="tr-perfect">✨ Perfekter Tag — Grammatik <b>und</b> Vokabeln. +50 XP</div>')
+    notes.push(`<div class="tr-perfect">${icon('spark', 14)} Perfekter Tag — Grammatik <b>und</b> Vokabeln. +50 XP</div>`)
   }
   if (summary?.dueTomorrow > 0) {
     const k = summary.dueTomorrow === 1 ? 'Karte kommt' : 'Karten kommen'

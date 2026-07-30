@@ -333,3 +333,66 @@ test('the -um rule needs real evidence, not a stub paradigm', () => {
   // of its ending alone.
   assert.equal(guessGender(new Map([['sg.nom', 'jakiśum']])), 'm')
 })
+
+test('feminines that do not end in -a are still feminine', () => {
+  // Caught by reading a real drill: the game asked the gender of `pani` and
+  // marked "männlich" correct. The nominative gives nothing away here — `pani`
+  // ends in -i, and noc/rzecz/sól/miłość end in consonants, which the old rule
+  // read as masculine. The instrumental in -ą is what settles it.
+  for (const lemma of ['pani', 'noc', 'rzecz', 'sól', 'miłość', 'krew', 'twarz', 'część']) {
+    const para = paradigms.get(lemma)
+    if (!para) continue
+    assert.equal(guessGender(para), 'f', `${lemma} should be feminine`)
+  }
+})
+
+test('the instrumental never overrules a real masculine or neuter', () => {
+  for (const lemma of ['kot', 'dom', 'lekarz', 'pieniądz', 'tłum']) {
+    const para = paradigms.get(lemma)
+    if (para) assert.equal(guessGender(para), 'm', `${lemma} should be masculine`)
+  }
+  for (const lemma of ['okno', 'morze', 'dziecko', 'imię', 'muzeum']) {
+    const para = paradigms.get(lemma)
+    if (para) assert.equal(guessGender(para), 'n', `${lemma} should be neuter`)
+  }
+})
+
+test('male humans that decline like feminines are still masculine', () => {
+  // The class the gender.basic lesson warns about in its own "typischer Fehler"
+  // note. Every one of these takes -ą in the instrumental, so the singular
+  // cannot tell them apart from a feminine; the plural accusative can, because
+  // they are animate and it copies the genitive.
+  for (const lemma of ['tata', 'tato', 'mężczyzna', 'kolega', 'kierowca', 'artysta',
+                       'poeta', 'sługa', 'zwycięzca', 'sprzedawca', 'idiota']) {
+    const para = paradigms.get(lemma)
+    if (!para) continue
+    assert.equal(guessGender(para), 'm', `${lemma} should be masculine`)
+  }
+})
+
+test('one wrong cell in the source table cannot flip a gender', () => {
+  // UniMorph records buzia's plural accusative as "buzi" rather than "buzie",
+  // which looks exactly like animacy. The plural nominative is the guard: no
+  // masculine personal noun of this class has one in -e, apart from -owie.
+  const buzia = paradigms.get('buzia')
+  if (buzia) {
+    assert.equal(buzia.get('pl.acc'), buzia.get('pl.gen'), 'the bad cell is still there')
+    assert.equal(guessGender(buzia), 'f', 'buzia is feminine despite the bad cell')
+  }
+  // ...and the -owie exception really is needed, or `tata` regresses.
+  const tata = paradigms.get('tata')
+  if (tata) {
+    assert.match(tata.get('pl.nom') ?? '', /owie$/)
+    assert.equal(guessGender(tata), 'm')
+  }
+})
+
+test('gender is withheld rather than guessed when the paradigm is too thin', () => {
+  // A gender drill built on a guess teaches the wrong thing, so an ambiguous
+  // vowel-final nominative with no instrumental yields undefined and the
+  // generator skips the item.
+  assert.equal(guessGender(new Map([['sg.nom', 'pani']])), undefined)
+  assert.equal(guessGender(new Map([['sg.nom', 'gospodyni']])), undefined)
+  // A consonant-final nominative is still the overwhelmingly likely masculine.
+  assert.equal(guessGender(new Map([['sg.nom', 'stół']])), 'm')
+})

@@ -7,10 +7,10 @@
   </head>
   <body>
     <header>
-      <h1>znam</h1>
+      <h1><i data-icon="mark" data-size="18"></i>znam</h1>
       <nav>
         <button data-tab="stats" class="active">Stats</button>
-        <button data-tab="trening">🦬 Trening</button>
+        <button data-tab="trening">Trening</button>
         <button data-tab="library">Library</button>
         <button data-tab="words">Words</button>
         <button data-tab="languages">Languages</button>
@@ -18,10 +18,10 @@
         <button data-tab="calibrate">Calibrate</button>
       </nav>
       <select id="theme-select" title="Theme">
-        <option value="midnight">🌙 Midnight</option>
-        <option value="daylight">☀️ Daylight</option>
-        <option value="nord">🧊 Nord</option>
-        <option value="sepia">📜 Sepia</option>
+        <option value="midnight">Midnight</option>
+        <option value="daylight">Daylight</option>
+        <option value="nord">Nord</option>
+        <option value="sepia">Sepia</option>
       </select>
       <select id="lang-select" title="Language"></select>
     </header>
@@ -107,13 +107,13 @@
         <div id="tr-home" hidden>
           <div class="card tr-hero">
             <div class="tr-hero-main">
-              <div class="tr-zubr">🦬</div>
+              <div class="tr-zubr" data-icon="zubr" data-size="34"></div>
               <div class="grow">
                 <h2 id="tr-greeting">Dzień dobry!</h2>
                 <p class="hint" id="tr-today"></p>
               </div>
               <div class="tr-streak" id="tr-streak" title="Serie">
-                <span class="tr-flame">🔥</span>
+                <i data-icon="flame" data-size="15"></i>
                 <span class="tr-streak-n">0</span>
               </div>
             </div>
@@ -125,13 +125,15 @@
               <div class="tr-xp-track"><div class="tr-xp-fill" id="tr-xp-fill"></div></div>
             </div>
             <div class="tr-modes">
-              <button id="tr-start" class="primary tr-mode-btn">
-                <span class="tr-mode-title">🦬 Trening</span>
+              <button id="tr-start" class="tr-mode-btn">
+                <i data-icon="grammar" data-size="20"></i>
+                <span class="tr-mode-title">Trening</span>
                 <span class="tr-mode-sub">Grammatik · 15 Min</span>
                 <span class="tr-mode-streak" id="tr-streak-grammar"></span>
               </button>
-              <button id="sl-start" class="primary tr-mode-btn">
-                <span class="tr-mode-title">📚 Słówka</span>
+              <button id="sl-start" class="tr-mode-btn">
+                <i data-icon="book" data-size="20"></i>
+                <span class="tr-mode-title">Słówka</span>
                 <span class="tr-mode-sub">Vokabeln · 10 Min</span>
                 <span class="tr-mode-streak" id="tr-streak-vocab"></span>
               </button>
@@ -186,13 +188,13 @@
             <button id="tr-quit" class="tr-quit" title="Training beenden">✕</button>
             <div class="tr-progress-track"><div class="tr-progress-fill" id="tr-progress-fill"></div></div>
             <div class="tr-clock" id="tr-clock">15:00</div>
-            <div class="tr-combo" id="tr-combo" hidden><span id="tr-combo-n">0</span>×</div>
+            <div class="tr-combo" id="tr-combo" hidden><i data-icon="bolt" data-size="12"></i><span id="tr-combo-n">0</span>×</div>
           </div>
 
           <div class="card tr-stage" id="tr-stage">
             <div class="tr-phase" id="tr-phase"></div>
             <div id="tr-boss-bar" hidden>
-              <div class="tr-boss-label"><span>👹 Boss</span><span id="tr-boss-hp-text"></span></div>
+              <div class="tr-boss-label"><span><i data-icon="boss" data-size="13"></i> Boss</span><span id="tr-boss-hp-text"></span></div>
               <div class="tr-boss-hp"><div id="tr-boss-hp-fill" style="width:100%"></div></div>
             </div>
             <p class="tr-prompt" id="tr-prompt"></p>
@@ -228,7 +230,7 @@
             <button id="sl-quit" class="tr-quit" title="Beenden">✕</button>
             <div class="tr-progress-track"><div class="tr-progress-fill" id="sl-progress-fill"></div></div>
             <div class="tr-clock" id="sl-clock">10:00</div>
-            <div class="tr-combo" id="sl-combo" hidden><span id="sl-combo-n">0</span>×</div>
+            <div class="tr-combo" id="sl-combo" hidden><i data-icon="bolt" data-size="12"></i><span id="sl-combo-n">0</span>×</div>
           </div>
 
           <div class="card tr-stage" id="sl-stage">
@@ -254,7 +256,7 @@
         <!-- Słówka summary -->
         <div id="sl-summary" hidden>
           <div class="card tr-summary-card">
-            <div class="tr-zubr tr-zubr-big">📚</div>
+            <div class="tr-zubr tr-zubr-big" data-icon="book" data-size="46"></div>
             <h2 id="sl-summary-title">Koniec!</h2>
             <p class="hint" id="sl-summary-sub"></p>
             <div id="sl-summary-tiles" class="stat-tiles"></div>
@@ -266,7 +268,7 @@
         <!-- Summary -->
         <div id="tr-summary" hidden>
           <div class="card tr-summary-card">
-            <div class="tr-zubr tr-zubr-big">🦬</div>
+            <div class="tr-zubr tr-zubr-big" data-icon="zubr" data-size="52"></div>
             <h2 id="tr-summary-title">Koniec!</h2>
             <p class="hint" id="tr-summary-sub"></p>
             <div id="tr-summary-tiles" class="stat-tiles"></div>
@@ -357,7 +359,7 @@
             included; language setup re-downloads them.)
           </p>
           <div class="toolbar">
-            <button id="backup-export">⬇ Download full backup</button>
+            <button id="backup-export"><i data-icon="download" data-size="14"></i> Download full backup</button>
             <label style="display:inline-flex;align-items:center;gap:6px">Restore
               <input type="file" id="backup-restore" accept=".json" /></label>
           </div>
@@ -447,7 +449,7 @@
           </div>
           <div id="cal-applied" class="hint"></div>
           <div class="toolbar" id="cal-undo-row" hidden>
-            <button id="cal-undo">↩ Undo this calibration</button>
+            <button id="cal-undo"><i data-icon="undo" data-size="14"></i> Undo this calibration</button>
           </div>
         </div>
       </section>

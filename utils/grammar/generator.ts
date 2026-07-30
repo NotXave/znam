@@ -106,12 +106,57 @@ function slotFits(lemma: string, paradigm: Paradigm, spec: SlotSpec): boolean {
 
 /**
  * Nouns in the table are not tagged for gender (their gender is inherent, not
- * inflectional), so infer it from the nominative singular the same way the
- * gender.basic lesson teaches it.
+ * inflectional), so it has to be inferred from the forms.
+ *
+ * The gender.basic lesson teaches the nominative-ending rule, and the drill used
+ * to apply exactly that — which is how it came to ask about `pani` and mark
+ * "männlich" correct. The rule the lesson teaches is a good rule for a learner
+ * looking at a word; it is not good enough for a program that has the whole
+ * paradigm in front of it. So this reads the paradigm first and falls back to
+ * the taught rule, returning undefined rather than guessing when the evidence
+ * runs out.
  */
 export function guessGender(paradigm: Paradigm): 'm' | 'f' | 'n' | undefined {
   const nom = paradigm.get('sg.nom')
   if (!nom) return undefined
+
+  // The INSTRUMENTAL is the decisive evidence, so it is consulted before any
+  // spelling rule. Every feminine singular instrumental ends in -ą (kobietą,
+  // panią, nocą, solą, miłością) and no masculine or neuter one does — they end
+  // in -em/-iem. The nominative alone cannot do this: it taught `pani` as
+  // masculine, along with the whole class of consonant-final feminines
+  // (noc, rzecz, sól, miłość), which is a large and common group.
+  // Male humans that decline like feminines are checked FIRST, because the
+  // instrumental test below would call every one of them feminine: `tata`,
+  // `tato`, `mężczyzna`, `kolega`, `kierowca`, `artysta` all take -ą. The
+  // gender.basic lesson names this class in its own "typischer Fehler" note, so
+  // the drill contradicting it was doubly wrong.
+  //
+  // The singular cannot distinguish them; the PLURAL can. Masculine personal
+  // nouns are animate, so their plural accusative copies the genitive
+  // (kolegów, mężczyzn), while a feminine's copies the nominative (kobiety).
+  // The plural-nominative guard is what keeps one bad table cell from flipping a
+  // gender. UniMorph records `buzia` with pl.acc = "buzi" (it is "buzie"), which
+  // reads as animacy and would make a perfectly feminine word masculine.
+  //
+  // Masculine personal plurals in this class are koledzy, artyści, mężczyźni,
+  // kierowcy — never `-e`. The one exception is `-owie` (tatowie, wujowie),
+  // which is itself an unambiguous masculine-personal ending, so it is allowed
+  // back in explicitly.
+  //
+  // Masculines the guard does exclude (nauczyciele, pokoje) are consonant-final
+  // and reach 'm' through the instrumental test below anyway.
+  const plAcc = paradigm.get('pl.acc')
+  const plGen = paradigm.get('pl.gen')
+  const plNom = paradigm.get('pl.nom')
+  const personalPlural = plNom && (!/e$/.test(plNom) || /owie$/.test(plNom))
+  if (plAcc && plGen && plNom && personalPlural && plAcc === plGen && plAcc !== plNom) {
+    return 'm'
+  }
+
+  const ins = paradigm.get('sg.ins')
+  if (ins && /ą$/.test(ins)) return 'f'
+
   if (/[oeę]$/.test(nom)) return 'n'
   if (/a$/.test(nom)) return 'f'
 
@@ -121,6 +166,15 @@ export function guessGender(paradigm: Paradigm): 'm' | 'f' | 'n' | undefined {
   // being indeclinable in the singular: centrum stays centrum in every case,
   // while rozum goes rozumu, rozumem, rozumie.
   if (/um$/.test(nom) && isIndeclinableSingular(paradigm, nom)) return 'n'
+
+  // An -em/-iem instrumental narrows it to masculine or neuter, and the
+  // nominative endings above have already claimed every neuter shape.
+  if (ins && /e[mń]?$/.test(ins)) return 'm'
+
+  // No instrumental in the table. The consonant rule is right far more often
+  // than not, but it is a guess, and a gender drill built on a guess teaches
+  // the wrong thing — so say so rather than asserting.
+  if (!ins) return /[^aeiouyąęó]$/.test(nom) ? 'm' : undefined
 
   return 'm'
 }
