@@ -18,10 +18,39 @@ import {
   getWord,
   putLibraryEntry,
   putWords,
+  putWordsChunked,
+  deleteWordsByRun,
+  getTopLemmas,
 } from '../utils/db'
 import { handleSetupPort, languageState, setCalibratedAt } from '../utils/language-setup'
-import { calibrationLemmas, calibrationSample, estimateKnownRank } from '../utils/calibration'
+import {
+  endGrammarSession,
+  grammarProgress,
+  grammarState,
+  handleGrammarSetupPort,
+  startGrammarSession,
+} from '../utils/grammar-bg'
+import { calibrationNext, invalidateKnownCache } from '../utils/calibration-bg'
+import { endVocabSession, startVocabSession, vocabProgress } from '../utils/vocab-bg'
+import {
+  bandForRank,
+  calibrationSample,
+  falseAlarmRate,
+  fitPosterior,
+  posteriorPKnown,
+  summarize,
+} from '../utils/calibration'
 import { countFreqRows, getFreqRanks, getVideoScores, putVideoScore } from '../utils/db'
+import {
+  getAllConceptProgressEveryLang,
+  getAllSessionDays,
+  getAllVocabCards,
+  putConceptProgress,
+  putSessionDay,
+  putVocabCards,
+} from '../utils/db'
+import type { ConceptProgress, SessionDay } from '../utils/grammar/types'
+import type { VocabCard } from '../utils/grammar/vocab'
 import { rescoreLemmaCounts, scoreTokens } from '../utils/scoring'
 import { tokenize } from '../utils/tokenizer'
 import { fetchCaptionText, fetchVideoInfo, pickTrack } from '../utils/youtube-captions'
@@ -139,7 +168,9 @@ async function computeStats(lang: string) {
     counts[w.status]++
     if (w.status === 'learning') levels[(w.level ?? 1) - 1]++
     if (now - w.createdAt < 7 * DAY) addedThisWeek++
-    if (now - w.createdAt < 30 * DAY) {
+    // Calibration's bulk write shares one timestamp across up to 50k records;
+    // charting it would flatten every genuine day to zero. Totals keep it.
+    if (w.source !== 'calibration' && now - w.createdAt < 30 * DAY) {
       const day = new Date(w.createdAt).toISOString().slice(0, 10)
       daily[day] = (daily[day] || 0) + 1
     }
@@ -227,7 +258,13 @@ async function computeDeepStats(lang: string) {
 
   // Vocabulary growth: cumulative known+learning words by first-tracked date,
   // downsampled to ≤120 points for the chart.
-  const tracked = words.filter(w => w.status === 'known' || w.status === 'learning')
+  // Calibration writes tens of thousands of records with one identical
+  // timestamp, which is not a day of learning — including it turns the growth
+  // curve into a vertical cliff and buries every real day in the daily chart.
+  // It still counts toward totals, just not toward per-day history.
+  const organic = words.filter(w => w.source !== 'calibration')
+
+  const tracked = organic.filter(w => w.status === 'known' || w.status === 'learning')
   const created = tracked.map(w => w.createdAt).sort((a, b) => a - b)
   const growth: { t: number; total: number }[] = []
   const step = Math.max(1, Math.ceil(created.length / 120))
@@ -243,7 +280,7 @@ async function computeDeepStats(lang: string) {
     const d = new Date(t).toISOString().slice(0, 10)
     activity[d] = (activity[d] || 0) + 1
   }
-  for (const w of words) {
+  for (const w of organic) {
     bump(w.createdAt)
     if (w.updatedAt - w.createdAt > DAY) bump(w.updatedAt)
   }
@@ -498,7 +535,11 @@ export default defineBackground(() => {
       handleSetupPort(port, (lang) => {
         statusMaps.delete(lang)
         statusLoads.delete(lang)
+        // The word list was just replaced — calibration holds it in memory.
+        invalidateKnownCache()
       })
+    } else if (port.name === 'grammar-setup') {
+      handleGrammarSetupPort(port)
     } else if (port.name === 'ocr') {
       handleOcrPort(port)
     } else if (port.name === 'asr') {
@@ -587,6 +628,29 @@ export default defineBackground(() => {
         case 'GET_SETTINGS':
           return await getSettings()
 
+        // ── Grammar game (Trening tab) ──
+        case 'GRAMMAR_STATE':
+          return await grammarState(message.payload.lang)
+
+        case 'GRAMMAR_SESSION_START':
+          return await startGrammarSession(message.payload.lang, message.payload.minutes)
+
+        case 'GRAMMAR_SESSION_END':
+          return await endGrammarSession(message.payload.lang, message.payload.result)
+
+        case 'GRAMMAR_PROGRESS':
+          return await grammarProgress(message.payload.lang)
+
+        // ── Słówka (vocabulary trainer) ──
+        case 'VOCAB_SESSION_START':
+          return await startVocabSession(message.payload.lang, message.payload.minutes)
+
+        case 'VOCAB_SESSION_END':
+          return await endVocabSession(message.payload.lang, message.payload.result)
+
+        case 'VOCAB_PROGRESS':
+          return await vocabProgress(message.payload.lang)
+
         case 'GET_LANGUAGE_STATE':
           return await languageState(message.payload.lang)
 
@@ -597,15 +661,31 @@ export default defineBackground(() => {
         }
 
         case 'EXPORT_BACKUP': {
-          // Full backup: every word in every language, the whole library, and
-          // settings. Lemma/frequency tables are excluded on purpose — they're
-          // re-downloadable via language setup and would bloat the file.
-          const [words, library, settings] = await Promise.all([
+          // Full backup: every word in every language, the whole library,
+          // settings, and grammar-game progress. Lemma/frequency/morph tables
+          // are excluded on purpose — they're re-downloadable via setup and
+          // would bloat the file.
+          const [words, library, settings, grammar, sessions, vocab, game] = await Promise.all([
             getAllWordsEveryLang(),
             getLibrary(),
             getSettings(),
+            getAllConceptProgressEveryLang(),
+            getAllSessionDays(),
+            getAllVocabCards(),
+            browser.storage.local.get('grammarGame'),
           ])
-          return { format: 'znam-backup', version: 1, exportedAt: Date.now(), words, library, settings }
+          return {
+            format: 'znam-backup',
+            version: 2,
+            exportedAt: Date.now(),
+            words,
+            library,
+            settings,
+            grammar,
+            sessions,
+            vocab,
+            grammarGame: game.grammarGame ?? {},
+          }
         }
 
         case 'IMPORT_BACKUP': {
@@ -627,10 +707,30 @@ export default defineBackground(() => {
           if (b.settings && typeof b.settings === 'object') {
             await saveSettings({ ...DEFAULT_SETTINGS, ...b.settings })
           }
+          // v2 additions — absent from v1 files, which stay importable.
+          let grammarCount = 0
+          if (Array.isArray(b.grammar)) {
+            const rows = (b.grammar as ConceptProgress[]).filter(p => p && p.lang && p.conceptId)
+            await putConceptProgress(rows)
+            grammarCount = rows.length
+          }
+          if (Array.isArray(b.sessions)) {
+            for (const day of b.sessions as SessionDay[]) {
+              if (day && day.lang && day.date) await putSessionDay(day)
+            }
+          }
+          if (Array.isArray(b.vocab)) {
+            await putVocabCards(
+              (b.vocab as VocabCard[]).filter(c => c && c.lang && c.lemma),
+            )
+          }
+          if (b.grammarGame && typeof b.grammarGame === 'object') {
+            await browser.storage.local.set({ grammarGame: b.grammarGame })
+          }
           // Word statuses changed under the cache's feet — rebuild lazily.
           statusMaps.clear()
           statusLoads.clear()
-          return { words: words.length, library: libraryCount }
+          return { words: words.length, library: libraryCount, grammar: grammarCount }
         }
 
         case 'IMPORT_WORDS': {
@@ -693,22 +793,82 @@ export default defineBackground(() => {
           return await calibrationSample(message.payload.lang)
 
         case 'CALIBRATION_APPLY': {
-          const { lang, topN } = message.payload
+          // Banded, not a prefix. Words above the 90 % mark are recorded as
+          // known; the uncertain 50–90 % band becomes `learning` at a level
+          // scaled by confidence; below 50 % nothing is claimed at all. The old
+          // behaviour marked everything under the 50 % crossing as known, which
+          // by construction asserted knowledge of words the learner didn't have.
+          const { lang, knownUpTo, learningUpTo, answers } = message.payload
           const statuses = await statusMapFor(lang)
           const now = Date.now()
+
+          const post = fitPosterior(answers ?? [], falseAlarmRate(answers ?? []))
+          const ceiling = Math.max(knownUpTo, learningUpTo)
+          const lemmas = await getTopLemmas(lang, ceiling)
+
           const records: WordRecord[] = []
-          for (const lemma of await calibrationLemmas(lang, topN)) {
-            if (statuses.has(lemma)) continue // never downgrade
-            statuses.set(lemma, { status: 'known' })
-            records.push({ lang, lemma, status: 'known', source: 'calibration', createdAt: now, updatedAt: now })
+          let known = 0
+          let learning = 0
+          for (let i = 0; i < lemmas.length; i++) {
+            const lemma = lemmas[i]
+            if (statuses.has(lemma)) continue // never downgrade existing knowledge
+            const rank = i + 1
+            const assignment = bandForRank(
+              rank,
+              knownUpTo,
+              learningUpTo,
+              answers?.length ? posteriorPKnown(post, rank) : undefined,
+            )
+            if (!assignment) continue
+            statuses.set(lemma, { status: assignment.band, level: assignment.level })
+            records.push({
+              lang, lemma,
+              status: assignment.band,
+              level: assignment.level,
+              source: 'calibration',
+              createdAt: now, updatedAt: now,
+            })
+            if (assignment.band === 'known') known++
+            else learning++
           }
-          await putWords(records)
+
+          await putWordsChunked(records)
           await setCalibratedAt(lang)
-          return { added: records.length }
+
+          // Stamp the run so it can be undone as a unit.
+          const { langMeta } = await browser.storage.local.get('langMeta')
+          const meta = (langMeta as any) ?? {}
+          meta[lang] = { ...meta[lang], calibrationRun: now }
+          await browser.storage.local.set({ langMeta: meta })
+
+          return { added: records.length, known, learning }
         }
 
-        case 'CALIBRATION_ESTIMATE':
-          return { topN: estimateKnownRank(message.payload.answers) }
+        case 'CALIBRATION_NEXT': {
+          const { lang, answers, used } = message.payload
+          return await calibrationNext(lang, answers, used)
+        }
+
+        case 'CALIBRATION_ESTIMATE': {
+          const answers = message.payload.answers
+          const maxRank = (await countFreqRows(message.payload.lang ?? 'pl')) || 50000
+          const f = falseAlarmRate(answers)
+          return summarize(fitPosterior(answers, f), maxRank)
+        }
+
+        case 'CALIBRATION_UNDO': {
+          const { lang } = message.payload
+          const { langMeta } = await browser.storage.local.get('langMeta')
+          const runAt = (langMeta as any)?.[lang]?.calibrationRun
+          if (!runAt) return { removed: 0 }
+          const removed = await deleteWordsByRun(lang, 'calibration', runAt)
+          const meta = (langMeta as any) ?? {}
+          meta[lang] = { ...meta[lang], calibrationRun: undefined }
+          await browser.storage.local.set({ langMeta: meta })
+          statusMaps.delete(lang)
+          statusLoads.delete(lang)
+          return { removed }
+        }
 
         case 'SCORE_VIDEOS':
           return await scoreVideos(message.payload.lang, message.payload.videoIds)

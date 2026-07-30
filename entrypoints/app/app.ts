@@ -9,7 +9,9 @@ import type {
 import { getSettings, saveSettings } from '../../utils/settings'
 import { difficultyLabel, rescoreLemmaCounts } from '../../utils/scoring'
 import { parseVocabFile, wordsToAnki, wordsToCsv, type ParsedVocabFile } from '../../utils/csv-import'
-import type { CalibrationSample } from '../../utils/calibration'
+import type { CalibrationAnswer, CalibrationSample, SizeEstimate } from '../../utils/calibration'
+import { initTrening, renderTrening, setTreningLang } from './trening'
+import { icon, mountIcons } from './icons'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
@@ -31,11 +33,12 @@ const LANGUAGES: [string, string][] = [
 
 const refreshers: Record<string, () => void> = {
   stats: renderStats,
+  trening: () => { void renderTrening() },
   library: renderLibrary,
   words: renderWords,
   languages: renderLanguageState,
   import: () => {},
-  calibrate: () => {},
+  calibrate: () => { void renderCalibrate() },
 }
 
 interface Stats {
@@ -115,7 +118,7 @@ async function renderStats() {
     .join('')
 
   renderComprehensionCard('stats-youtube', s.youtube, 'YouTube videos you watch', 'Open videos or Shorts (with subtitles) — each one watched counts.')
-  renderComprehensionCard('stats-netflix', s.netflix, 'Netflix you watch (znam-transcribed)', 'Turn on 🎙️ Transcribe on a Netflix watch page — each session watched counts.')
+  renderComprehensionCard('stats-netflix', s.netflix, 'Netflix you watch (znam-transcribed)', 'Turn on Transcribe on a Netflix watch page — each session watched counts.')
 
   const lib = s.library
   document.getElementById('stats-reading')!.innerHTML = `
@@ -189,7 +192,7 @@ function renderComprehensionCard(
     const left = stat.unlockAt - stat.count
     const pctBar = Math.round((stat.count / stat.unlockAt) * 100)
     el.innerHTML = `
-      <div>🔒 Watch <b>${left}</b> more to unlock your comprehension estimate.</div>
+      <div>${icon('lock', 13)} Watch <b>${left}</b> more to unlock your comprehension estimate.</div>
       <div class="bar-row" style="margin-top:8px">
         <span class="bar-track"><span class="bar-fill" style="width:${pctBar}%;background:#2d4a77"></span></span>
         <span class="bar-num">${stat.count}/${stat.unlockAt}</span>
@@ -432,7 +435,7 @@ const SOURCE_LABELS: Record<string, string> = {
 function renderDeepStats(d: DeepStats, s: Stats) {
   VZ = vizColors() // re-read: the theme may have changed since module load
   document.getElementById('stats-tiles2')!.innerHTML =
-    tile(d.streak ? `🔥 ${d.streak}` : '0', 'Day streak') +
+    tile(d.streak ? `${icon('flame', 18)} ${d.streak}` : '0', 'Day streak') +
     tile('+' + d.knownThisMonth.toLocaleString(), 'Marked known (30 days)') +
     tile(d.totalLookups.toLocaleString(), 'Total lookups') +
     tile(s.library.total.toLocaleString(), 'Items in library')
@@ -648,10 +651,16 @@ async function renderLanguageState() {
     <h2>${LANGUAGES.find(([c]) => c === lang)?.[1] ?? lang}</h2>
     <div>Lemma dictionary: <b>${state.dictReady ? `${state.dictForms.toLocaleString()} forms` : 'not installed'}</b></div>
     <div>Frequency list: <b>${state.freqReady ? `${state.freqLemmas.toLocaleString()} lemmas` : 'not installed'}</b></div>
+    <div>Word list: <b>${state.knownLemmas > 0 ? `${state.knownLemmas.toLocaleString()} lemmas` : 'not installed'}</b></div>
     <div>Words: <b class="status-known">${state.counts.known.toLocaleString()} known</b> ·
       <b class="status-learning">${state.counts.learning.toLocaleString()} learning</b> ·
       ${state.counts.ignored.toLocaleString()} ignored</div>
     ${state.calibratedAt ? `<div class="hint">Calibrated ${new Date(state.calibratedAt).toLocaleDateString()}</div>` : ''}
+    ${state.dictReady && state.knownLemmas === 0
+      ? `<div class="hint">The word list is new. Reinstall the language data below and
+           Calibrate and Słówka will stop asking about names like <i>Liam</i> and
+           <i>Marshall</i>, which the frequency list carries but nobody needs to study.</div>`
+      : ''}
   `
 }
 
@@ -689,57 +698,137 @@ function runSetup(request: any) {
 
 // ── Calibration ─────────────────────────────────────────────
 
-let calSamples: CalibrationSample[] = []
-let calAnswers: { rank: number; known: boolean }[] = []
+let calAnswers: CalibrationAnswer[] = []
+let calUsed: string[] = []
+let calCurrent: CalibrationSample | null = null
+let calEstimate: SizeEstimate | null = null
+let calMax = 25
+
+const CAL_INTRO_HINT =
+  "You'll see words sampled across the frequency spectrum — answer honestly " +
+  'whether you know each one. The quiz adapts as it goes, so it needs about ' +
+  '20 questions instead of 38.'
+
+function calShowScreen(name: 'intro' | 'quiz' | 'result') {
+  $('cal-intro').hidden = name !== 'intro'
+  $('cal-quiz').hidden = name !== 'quiz'
+  $('cal-result').hidden = name !== 'result'
+}
+
+/** Reset on tab entry — otherwise a stale result screen persists. */
+async function renderCalibrate() {
+  if (calAnswers.length === 0) calShowScreen(calEstimate ? 'result' : 'intro')
+  const { langMeta } = await browser.storage.local.get('langMeta')
+  const run = (langMeta as any)?.[lang]?.calibrationRun
+  $('cal-undo-row').hidden = !run
+  const prev = $('cal-previous')
+  if (run) {
+    prev.hidden = false
+    prev.textContent = `Last calibrated ${new Date(run).toLocaleDateString()}. Running it again only adds words it hasn't seen before.`
+  } else {
+    prev.hidden = true
+  }
+}
 
 async function calStart() {
-  calSamples = await send({ type: 'CALIBRATION_SAMPLE', payload: { lang } })
-  if (!Array.isArray(calSamples) || calSamples.length < 10) {
-    $('cal-intro').querySelector('.hint')!.textContent =
-      'No frequency data for this language — install language data first (Languages tab).'
-    return
-  }
   calAnswers = []
-  $('cal-intro').hidden = true
-  $('cal-quiz').hidden = false
-  $('cal-result').hidden = true
-  calShowWord()
+  calUsed = []
+  calCurrent = null
+  calEstimate = null
+  calShowScreen('quiz')
+  await calStep()
 }
 
-function calShowWord() {
-  const i = calAnswers.length
-  if (i >= calSamples.length) {
-    calFinish()
+/**
+ * One turn of the adaptive loop: hand the answers so far to the background and
+ * render whatever it decides to ask next. The background owns the statistics;
+ * this function only draws.
+ */
+async function calStep() {
+  // The next item is fetched asynchronously. Leaving the answer buttons live
+  // meanwhile means a second click lands on a question that is already gone —
+  // silently dropped, and indistinguishable from a broken button.
+  calSetAnswerable(false)
+  const step = await send({
+    type: 'CALIBRATION_NEXT',
+    payload: { lang, answers: calAnswers, used: calUsed },
+  })
+
+  if (!step || (step as any).error) {
+    $('cal-intro').querySelectorAll('.hint')[0].textContent =
+      'No frequency data for this language — install language data first (Languages tab).'
+    calShowScreen('intro')
     return
   }
-  $('cal-word').textContent = calSamples[i].lemma
-  $('cal-progress').textContent = `${i + 1} / ${calSamples.length}`
+
+  if (step.done) {
+    calEstimate = step.estimate
+    calShowScreen('result')
+    calRenderResult()
+    return
+  }
+
+  calCurrent = step.item
+  calMax = step.max
+  calUsed.push(step.item.lemma)
+  calSetAnswerable(true)
+  $('cal-word').textContent = step.item.lemma
+  $('cal-progress').textContent = `Question ${calAnswers.length + 1}`
+  // The quiz can stop early, so the bar shows worst-case progress rather than
+  // pretending to know how many questions are left.
+  $('cal-bar').style.width = `${Math.round((calAnswers.length / calMax) * 100)}%`
 }
 
-async function calAnswer(known: boolean) {
-  calAnswers.push({ rank: calSamples[calAnswers.length].rank, known })
-  if (calAnswers.length >= calSamples.length) await calFinish()
-  else calShowWord()
+function calSetAnswerable(on: boolean) {
+  $<HTMLButtonElement>('cal-know').disabled = !on
+  $<HTMLButtonElement>('cal-dont').disabled = !on
 }
 
-async function calFinish() {
-  const { topN } = await send({ type: 'CALIBRATION_ESTIMATE', payload: { answers: calAnswers } })
-  $('cal-quiz').hidden = true
-  $('cal-result').hidden = false
-  const slider = $<HTMLInputElement>('cal-slider')
-  slider.value = String(Math.max(100, Math.min(50000, topN)))
-  calSyncSlider()
+function calAnswer(known: boolean) {
+  if (!calCurrent) return
+  calAnswers.push({ rank: calCurrent.rank, known, pseudo: calCurrent.pseudo })
+  calCurrent = null
+  void calStep()
 }
 
-function calSyncSlider() {
-  const n = Number($<HTMLInputElement>('cal-slider').value)
-  $('cal-topn').textContent = n.toLocaleString()
-  $('cal-topn2').textContent = n.toLocaleString()
+function calRenderResult() {
+  const est = calEstimate
+  if (!est) return
+
+  $('cal-size').textContent = est.size.toLocaleString()
+  $('cal-ci').textContent =
+    `Most likely between ${est.low.toLocaleString()} and ${est.high.toLocaleString()} — ` +
+    'a quiz this short can only narrow it so far.'
+
+  // Only mention over-claiming when there is something to mention.
+  const honesty = $('cal-honesty')
+  const pseudoCount = calAnswers.filter(a => a.pseudo).length
+  if (pseudoCount > 0 && est.falseAlarm > 0.15) {
+    honesty.hidden = false
+    honesty.textContent =
+      `You said yes to ${Math.round(est.falseAlarm * 100)}% of the invented words, so the ` +
+      'estimate above has been adjusted down to compensate.'
+  } else {
+    honesty.hidden = true
+  }
+
+  const learningCount = Math.max(0, est.learningUpTo - est.knownUpTo)
+  $('cal-bands').innerHTML = [
+    bar('Mark as known', est.knownUpTo, Math.max(1, est.learningUpTo), VZ.known),
+    bar('Mark as learning', learningCount, Math.max(1, est.learningUpTo), VZ.learning),
+  ].join('')
+
+  $<HTMLButtonElement>('cal-apply').textContent =
+    `Apply — ${est.knownUpTo.toLocaleString()} known, ${learningCount.toLocaleString()} learning`
+  $<HTMLButtonElement>('cal-apply').disabled = est.knownUpTo === 0 && learningCount === 0
 }
 
 // ── Wire-up ─────────────────────────────────────────────────
 
 async function init() {
+  // Fill the [data-icon] placeholders in index.html before anything renders,
+  // so no screen ever flashes with empty icon slots.
+  mountIcons()
   const langSel = $<HTMLSelectElement>('lang-select')
   for (const [code, name] of LANGUAGES) {
     const opt = document.createElement('option')
@@ -756,8 +845,10 @@ async function init() {
     langSel.appendChild(opt)
   }
   langSel.value = lang
+  setTreningLang(lang)
   langSel.addEventListener('change', async () => {
     lang = langSel.value
+    setTreningLang(lang)
     await saveSettings({ ...(await getSettings()), targetLanguage: lang })
     const activeTab = (document.querySelector('nav button.active') as HTMLElement)?.dataset.tab
     if (activeTab) refreshers[activeTab]?.()
@@ -781,6 +872,11 @@ async function init() {
   document.querySelectorAll('nav button').forEach(b =>
     b.addEventListener('click', () => switchTab((b as HTMLElement).dataset.tab!)),
   )
+
+  initTrening()
+  // Deep link (e.g. the popup's Trening button opens app/index.html#trening).
+  const hash = location.hash.replace('#', '')
+  if (hash && refreshers[hash]) switchTab(hash)
 
   // Refresh the current tab when you come back to this page (e.g. after
   // watching a video in another tab) so scores reflect the words you learned.
@@ -993,11 +1089,33 @@ async function init() {
   $('cal-start').addEventListener('click', calStart)
   $('cal-know').addEventListener('click', () => calAnswer(true))
   $('cal-dont').addEventListener('click', () => calAnswer(false))
-  $('cal-slider').addEventListener('input', calSyncSlider)
+  $('cal-redo').addEventListener('click', () => {
+    calEstimate = null
+    calAnswers = []
+    calShowScreen('intro')
+  })
   $('cal-apply').addEventListener('click', async () => {
-    const topN = Number($<HTMLInputElement>('cal-slider').value)
-    const resp = await send({ type: 'CALIBRATION_APPLY', payload: { lang, topN } })
-    $('cal-applied').textContent = `Marked ${resp.added.toLocaleString()} new words as known.`
+    if (!calEstimate) return
+    const btn = $<HTMLButtonElement>('cal-apply')
+    btn.disabled = true
+    const resp = await send({
+      type: 'CALIBRATION_APPLY',
+      payload: {
+        lang,
+        knownUpTo: calEstimate.knownUpTo,
+        learningUpTo: calEstimate.learningUpTo,
+        answers: calAnswers,
+      },
+    })
+    $('cal-applied').textContent =
+      `Added ${resp.known.toLocaleString()} known and ${resp.learning.toLocaleString()} learning words.`
+    $('cal-undo-row').hidden = false
+    renderLanguageState()
+  })
+  $('cal-undo').addEventListener('click', async () => {
+    const resp = await send({ type: 'CALIBRATION_UNDO', payload: { lang } })
+    $('cal-applied').textContent = `Removed ${resp.removed.toLocaleString()} words from the last calibration.`
+    $('cal-undo-row').hidden = true
     renderLanguageState()
   })
 

@@ -1,212 +1,354 @@
 * { box-sizing: border-box; }
 
-/* ── Themes ──────────────────────────────────────────────────
-   Every color the app uses is a variable; a theme is one override block.
-   Chart series/ramps live here too so the SVG charts re-color with the
-   theme (app.ts reads them via getComputedStyle at render time). Status
-   colors (known green, learning yellow, level ramp) are deliberately
-   constant across themes — they carry meaning, not identity. */
+/* Any explicit `display` outranks the UA stylesheet's `[hidden] { display:
+   none }` — both are single-selector rules, and ours come later. Every flex or
+   grid container in this file therefore ignored its own hidden attribute, which
+   showed the answer box and the multiple-choice options at the same time, and
+   printed a streak chip reading "0 Tage" on day one. Enumerating the affected
+   selectors fixed that twice and missed it twice; this fixes the class of bug. */
+[hidden] { display: none !important; }
+
+/* ── Design tokens ───────────────────────────────────────────
+   The palette is near-monochrome on purpose: a ten-step neutral ramp per
+   theme plus ONE chromatic accent, spent only on interactive state and the
+   current item. Everything else earns emphasis through size, weight and
+   whitespace, which is what stops a dense app from reading as decorated.
+
+   Semantic colours are the exception and stay chromatic in every theme:
+   correct/wrong, the learning-level ramp, and the chart series. Those carry
+   meaning, not identity, so they must not shift when the theme does.
+
+   Elevation is a hairline, not a shadow. --shadow is `none` for surfaces that
+   sit in the page; --shadow-pop exists for the two things that genuinely
+   float above it (the chart tooltip and the celebration banner).
+
+   app.ts reads the chart tokens through getComputedStyle at render time, so
+   the inline SVGs re-colour with the theme. */
 
 :root {
-  --bg: #101019;
-  --card: #1a1a2e;
-  --raised: #242440;
-  --hover: #2d4a77;
-  --accent: #2d4a77;
-  --accent-2: #3987e5;
-  --on-accent: #ffffff;
-  --accent-ink: #cfe3ff;
-  --ink: #ececf2;
-  --ink-2: #b8b8c8;
-  --muted: #8a8aa0;
-  --line: #26263c;
-  --track: #14142200;
-  --track-solid: #16162a;
-  --shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
-  --viz-grid: #2a2a44;
-  --viz-tick: #8a8aa0;
-  --c-page: #3987e5;
-  --c-youtube: #e66767;
-  --c-netflix: #9085e9;
-  --heat-0: #23233c;
-  --heat-1: #1c5cab;
-  --heat-2: #2a78d6;
-  --heat-3: #5598e7;
-  --heat-4: #9ec5f4;
-  --spark: #2d4a77;
-  --spark-hover: #3a5d94;
+  /* neutral ramp: 0 = page, 9 = strongest ink */
+  --n-0: #0d0e11;
+  --n-1: #14161a;
+  --n-2: #1b1e23;
+  --n-3: #262a31;
+  --n-4: #333841;
+  --n-5: #78808f;
+  --n-6: #949ba5;
+  --n-7: #b3b9c2;
+  --n-8: #d6d9df;
+  --n-9: #f1f2f4;
+
+  --bg: var(--n-0);
+  --card: var(--n-1);
+  --raised: var(--n-2);
+  --line: var(--n-3);
+  --hover: var(--n-3);
+  --muted: var(--n-5);
+  --ink-2: var(--n-7);
+  --ink: var(--n-9);
+
+  /* the one accent */
+  --accent: #c8963e;
+  --accent-2: var(--accent);
+  --accent-ink: #e2b768;
+  --on-accent: #14140f;
+  --accent-soft: #c8963e22;
+
+  --track: #00000000;
+  --track-solid: var(--n-2);
+  --shadow: none;
+  --shadow-pop: 0 8px 24px -6px rgba(0, 0, 0, 0.6);
+
+  --viz-grid: var(--n-3);
+  --viz-tick: var(--n-5);
+  --c-page: #5b9bd8;
+  --c-youtube: #d9695f;
+  --c-netflix: #8b83c9;
+  /* the heat ramp climbs from the page toward the accent, so the heatmap and
+     the buttons belong to the same palette */
+  --heat-0: var(--n-2);
+  --heat-1: #4a3c1e;
+  --heat-2: #7b6029;
+  --heat-3: #a67d33;
+  --heat-4: #c8963e;
+  /* Ink for text sitting ON a heat step. Which end of the ramp needs light ink
+     and which needs dark flips between a dark theme and a light one, so it
+     cannot be one value — and it cannot be `--muted`, which was 1.5:1 on the
+     middle steps and made the case grid's percentages unreadable. */
+  --on-heat-1: var(--n-9);
+  --on-heat-2: var(--n-9);
+  --on-heat-4: #14140f;
+  --spark: var(--n-4);
+  --spark-hover: var(--accent);
+  --ok: #5f9e57;
+  --bad: #cd5b52;
+  --on-ok: #14140f;
+  --on-bad: #14140f;
+  --gold: var(--accent);
+  --boss: #8b83c9;
 }
 
 [data-theme="daylight"] {
-  --bg: #f2f3f5;
-  --card: #ffffff;
-  --raised: #eceef4;
-  --hover: #dbe5f5;
-  --accent: #2a78d6;
-  --accent-2: #2a78d6;
+  --n-0: #fbfaf8;
+  --n-1: #ffffff;
+  --n-2: #f2f1ee;
+  --n-3: #e2e0da;
+  --n-4: #c9c6be;
+  --n-5: #716e66;
+  --n-6: #59564f;
+  --n-7: #45423c;
+  --n-8: #2a2825;
+  --n-9: #171614;
+
+  --accent: #8a5f1a;
+  --accent-ink: #6d4a12;
   --on-accent: #ffffff;
-  --accent-ink: #1c5cab;
-  --ink: #1c1c28;
-  --ink-2: #46465a;
-  --muted: #73738a;
-  --line: #e4e6ee;
-  --track-solid: #eef0f6;
-  --shadow: 0 1px 6px rgba(30, 34, 60, 0.10);
-  --viz-grid: #e4e6ee;
-  --viz-tick: #73738a;
-  --c-page: #2a78d6;
-  --c-youtube: #e34948;
+  --accent-soft: #8a5f1a14;
+
+  --shadow: none;
+  --shadow-pop: 0 8px 22px -8px rgba(40, 34, 22, 0.28);
+
+  --c-page: #2f6fbd;
+  --c-youtube: #c0392b;
   --c-netflix: #4a3aa7;
-  --heat-0: #eef0f6;
-  --heat-1: #9ec5f4;
-  --heat-2: #5598e7;
-  --heat-3: #2a78d6;
-  --heat-4: #1c5cab;
-  --spark: #86b6ef;
-  --spark-hover: #2a78d6;
+  --heat-1: #ead9b6;
+  --heat-2: #d3b478;
+  --heat-3: #ad8434;
+  --heat-4: #8a5f1a;
+  --on-heat-1: var(--n-9);
+  --on-heat-2: var(--n-9);
+  --on-heat-4: #ffffff;
+  --spark: var(--n-4);
+  --ok: #3d7d37;
+  --bad: #b8433a;
+  --on-ok: #ffffff;
+  --on-bad: #ffffff;
+  --boss: #5f4bb0;
 }
 
 [data-theme="nord"] {
-  --bg: #2e3440;
-  --card: #3b4252;
-  --raised: #434c5e;
-  --hover: #4c566a;
-  --accent: #5e81ac;
-  --accent-2: #88c0d0;
-  --on-accent: #eceff4;
-  --accent-ink: #d8e6f5;
-  --ink: #eceff4;
-  --ink-2: #d0d6e0;
-  --muted: #9aa5b8;
-  --line: #434c5e;
-  --track-solid: #333a48;
-  --shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-  --viz-grid: #46506390;
-  --viz-tick: #9aa5b8;
-  --c-page: #3987e5;
-  --c-youtube: #e66767;
-  --c-netflix: #9085e9;
-  --heat-0: #434c5e;
-  --heat-1: #4d6a94;
-  --heat-2: #5e81ac;
-  --heat-3: #81a1c1;
-  --heat-4: #c3d7ea;
-  --spark: #5e81ac;
-  --spark-hover: #81a1c1;
+  --n-0: #2e3440;
+  --n-1: #353c4a;
+  --n-2: #3b4252;
+  --n-3: #464f62;
+  --n-4: #4c566a;
+  --n-5: #a3aec3;
+  --n-6: #b6bfd0;
+  --n-7: #d0d6e0;
+  --n-8: #e0e5ee;
+  --n-9: #eceff4;
+
+  --accent: #81a1c1;
+  --accent-ink: #a7c3dd;
+  --on-accent: #2e3440;
+  --accent-soft: #81a1c122;
+
+  --shadow: none;
+  --shadow-pop: 0 8px 24px -6px rgba(0, 0, 0, 0.45);
+
+  --c-page: #81a1c1;
+  --c-youtube: #d66d77;
+  --c-netflix: #b48ead;
+  --heat-1: #3f5570;
+  /* One step darker than Nord's natural mid-tone: at #52708f its own light ink
+     was 4.47:1, just under AA. */
+  --heat-2: #4b6784;
+  --heat-3: #6a8bab;
+  --heat-4: #81a1c1;
+  --on-heat-1: var(--n-9);
+  --on-heat-2: var(--n-9);
+  --on-heat-4: #2e3440;
+  --spark: var(--n-4);
+  --ok: #94ba7f;
+  --bad: #db8891;
+  --on-ok: #2e3440;
+  --on-bad: #2e3440;
+  --gold: #ebcb8b;
+  --boss: #b48ead;
 }
 
 [data-theme="sepia"] {
-  --bg: #efe6d5;
-  --card: #faf4e8;
-  --raised: #e8dcc6;
-  --hover: #dccdb0;
+  --n-0: #f1e8d8;
+  --n-1: #faf5ea;
+  --n-2: #e9dfca;
+  --n-3: #ded2b8;
+  --n-4: #c4b494;
+  --n-5: #6e624d;
+  --n-6: #5b5140;
+  --n-7: #4b4132;
+  --n-8: #322a1f;
+  --n-9: #241e15;
+
   --accent: #8b5e34;
-  --accent-2: #8b5e34;
-  --on-accent: #ffffff;
   --accent-ink: #6b4423;
-  --ink: #3b3020;
-  --ink-2: #5c4d36;
-  --muted: #8a7a63;
-  --line: #e2d6bd;
-  --track-solid: #ece1cb;
-  --shadow: 0 1px 6px rgba(90, 70, 40, 0.12);
-  --viz-grid: #e2d6bd;
-  --viz-tick: #8a7a63;
-  --c-page: #2a78d6;
-  --c-youtube: #e34948;
+  --on-accent: #faf5ea;
+  --accent-soft: #8b5e3418;
+
+  --shadow: none;
+  --shadow-pop: 0 8px 22px -8px rgba(90, 70, 40, 0.30);
+
+  --c-page: #2f6fbd;
+  --c-youtube: #c0392b;
   --c-netflix: #4a3aa7;
-  --heat-0: #ece1cb;
-  --heat-1: #d0b088;
-  --heat-2: #b0824f;
-  --heat-3: #8b5e34;
-  --heat-4: #62401f;
-  --spark: #c9a97e;
-  --spark-hover: #8b5e34;
+  --heat-1: #dcc49c;
+  --heat-2: #c39f6c;
+  --heat-3: #a67744;
+  --heat-4: #8b5e34;
+  --on-heat-1: var(--n-9);
+  --on-heat-2: var(--n-9);
+  --on-heat-4: #faf5ea;
+  --spark: var(--n-4);
+  --ok: #56753b;
+  --bad: #a5462f;
+  --on-ok: #faf5ea;
+  --on-bad: #faf5ea;
+  --boss: #7a5c8b;
+}
+
+/* ── Scale ───────────────────────────────────────────────────
+   One type scale and one spacing scale, so a size is a decision taken once
+   rather than a number invented per rule. The display face is for Polish
+   under study: the word being learned should be the subject of the screen,
+   which is a typographic job rather than a colour one. */
+
+:root {
+  --t-xs: 11px;
+  --t-sm: 12px;
+  --t-md: 13px;
+  --t-lg: 15px;
+  --t-xl: 18px;
+  --t-2xl: 24px;
+  --t-3xl: 32px;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+
+  /* 4 for controls, 8 for surfaces. The old uniform 14 is what read as a
+     template — nothing in print is rounded that evenly. */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-full: 999px;
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* prose measure — the German lessons are the only long-form text here and
+     they were running the full 860 px width, which is unreadable */
+  --measure: 62ch;
 }
 
 /* ── Base ──────────────────────────────────────────────────── */
 
 body {
   margin: 0;
-  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: var(--t-md)/1.6 var(--font-ui);
   background: var(--bg);
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
   transition: background 0.25s, color 0.25s;
 }
 
 header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 20px;
-  background: var(--card);
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-5);
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
-  box-shadow: var(--shadow);
   position: sticky;
   top: 0;
   z-index: 10;
 }
 
-h1 { font-size: 18px; margin: 0; letter-spacing: 0.2px; }
-h1::before {
-  content: '';
-  display: inline-block;
-  width: 10px; height: 10px;
-  border-radius: 3px;
-  margin-right: 8px;
-  background: linear-gradient(135deg, var(--accent-2), var(--c-netflix));
+/* The wordmark carries the identity, so it gets the display face and the
+   accent — and the drawn mark next to it replaces the gradient square that
+   used to stand in for a logo. */
+h1 {
+  font: 600 var(--t-xl)/1 var(--font-display);
+  margin: 0;
+  letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
 }
-h2 { font-size: 15px; margin: 0 0 10px; letter-spacing: 0.2px; }
+h1 svg { color: var(--accent); flex: none; }
+
+h2 {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  margin: 0 0 var(--s-3);
+  letter-spacing: -0.005em;
+}
 
 nav { display: flex; gap: 4px; flex: 1; }
 
+nav { gap: 2px; }
+
+/* A tab is marked by an underline and by weight, the way a rule in print
+   marks a column — not by a filled pill. */
 nav button {
   background: none;
   border: 0;
+  border-bottom: 2px solid transparent;
   color: var(--muted);
-  padding: 6px 14px;
-  border-radius: 999px;
+  padding: var(--s-2) var(--s-3) 6px;
+  border-radius: 0;
   cursor: pointer;
-  font-size: 14px;
-  transition: background 0.15s, color 0.15s;
+  font-size: var(--t-md);
+  transition: color 0.15s, border-color 0.15s;
 }
 
-nav button:hover { color: var(--ink); background: var(--raised); }
-nav button.active { background: var(--accent); color: var(--on-accent); }
+nav button:hover { color: var(--ink); }
+nav button.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
 
-main { max-width: 860px; margin: 0 auto; padding: 18px 20px 60px; }
+main { max-width: 880px; margin: 0 auto; padding: var(--s-5) var(--s-5) 72px; }
 
 .tab { display: none; }
 .tab.active { display: block; animation: tab-in 0.18s ease-out; }
 @keyframes tab-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 select, input[type="search"], input[type="text"], input[type="number"], input[type="file"] {
-  background: var(--raised);
+  background: var(--card);
   color: var(--ink);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  padding: 7px 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--t-md);
 }
-select:focus, input:focus { outline: 2px solid var(--accent-2); outline-offset: -1px; }
+select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
+/* Secondary buttons are outlines: a hairline and ink, no fill. Only the
+   primary action on a screen gets the accent, which is what makes it read as
+   the primary action at all. */
 button {
-  background: var(--raised);
-  color: var(--accent-ink);
-  border: 0;
-  border-radius: 8px;
-  padding: 7px 14px;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 7px 13px;
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
-  transition: background 0.15s, transform 0.1s;
+  font-size: var(--t-md);
+  transition: background 0.15s, border-color 0.15s;
 }
 
-button:hover { background: var(--hover); }
-button:active { transform: translateY(1px); }
-button.primary { background: var(--accent); color: var(--on-accent); font-weight: 600; }
-button:disabled { opacity: 0.5; cursor: default; }
+button:hover { background: var(--raised); border-color: var(--n-4); }
+button:active { background: var(--n-3); }
+button.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+button.primary:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.08); }
+button:disabled { opacity: 0.45; cursor: default; }
+button svg { vertical-align: -0.15em; }
 
 .toolbar {
   display: flex;
@@ -218,14 +360,17 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .toolbar input[type="search"] { flex: 1; min-width: 140px; }
 
-.hint { color: var(--muted); font-size: 12px; margin: 6px 0; }
+.hint { color: var(--muted); font-size: var(--t-sm); margin: var(--s-2) 0; }
+/* Long-form German gets a measure. Running lesson prose across 880 px was
+   the single biggest readability problem in the old layout. */
+.prose { max-width: var(--measure); }
 
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 16px 18px;
-  margin-bottom: 14px;
+  border-radius: var(--r-md);
+  padding: var(--s-4) var(--s-5);
+  margin-bottom: var(--s-3);
   box-shadow: var(--shadow);
 }
 
@@ -236,29 +381,30 @@ button:disabled { opacity: 0.5; cursor: default; }
 .item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--s-3);
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px 14px;
-  transition: border-color 0.15s;
+  border-radius: var(--r-sm);
+  padding: 10px var(--s-3);
+  transition: border-color 0.15s, background 0.15s;
 }
-.item:hover { border-color: var(--accent-2); }
+.item:hover { border-color: var(--n-4); background: var(--raised); }
 
 .item .grow { flex: 1; min-width: 0; }
 
-.item a { color: var(--accent-ink); text-decoration: none; font-weight: 600; }
+.item a { color: var(--ink); text-decoration: none; font-weight: 600; }
 .item a:hover { text-decoration: underline; }
 
-.item .meta { color: var(--muted); font-size: 12px; }
+.item .meta { color: var(--muted); font-size: var(--t-sm); }
 
 .score-pill {
   min-width: 52px;
   text-align: center;
-  font-weight: 700;
-  border-radius: 8px;
-  padding: 4px 6px;
-  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
+  font-size: var(--t-md);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Score pills keep fixed semantic colors across themes */
@@ -278,19 +424,24 @@ button:disabled { opacity: 0.5; cursor: default; }
 .word-status { display: flex; gap: 4px; }
 .word-status button { padding: 2px 8px; font-size: 11px; }
 .word-status button.active { background: var(--accent); color: var(--on-accent); }
+/* The learning-stage ramp is theme-invariant, because it means something. Its
+   ink is not: the ramp runs red → olive → green, and only the red end is dark
+   enough to carry white. Levels 2–5 take dark ink, which is what gets an 11 px
+   label to AA — white on stage 3 was 2.57:1. */
 .word-status button.lvl-1.active { background: #c14b4b; color: #fff; }
-.word-status button.lvl-2.active { background: #c1774b; color: #fff; }
-.word-status button.lvl-3.active { background: #b8a12e; color: #fff; }
-.word-status button.lvl-4.active { background: #8fa32e; color: #fff; }
-.word-status button.lvl-5.active { background: #5d9e4a; color: #fff; }
+.word-status button.lvl-2.active { background: #c1774b; color: #14140f; }
+.word-status button.lvl-3.active { background: #b8a12e; color: #14140f; }
+.word-status button.lvl-4.active { background: #8fa32e; color: #14140f; }
+.word-status button.lvl-5.active { background: #5d9e4a; color: #14140f; }
 
 .progress {
   margin-top: 10px;
-  background: var(--raised);
-  border-radius: 8px;
+  background: var(--track-solid);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
   overflow: hidden;
   position: relative;
-  height: 22px;
+  height: 20px;
 }
 
 .progress div {
@@ -311,15 +462,43 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 
 #cal-word {
-  font-size: 32px;
-  font-weight: 700;
+  font: 500 var(--t-3xl)/1.1 var(--font-display);
   text-align: center;
-  padding: 24px 0;
+  padding: var(--s-6) 0;
+  letter-spacing: -0.01em;
 }
 
 .cal-buttons { display: flex; gap: 10px; justify-content: center; }
 
 #cal-slider { width: 100%; margin: 10px 0; }
+
+/* Progress through the adaptive quiz. */
+.cal-track {
+  height: 6px;
+  background: var(--track-solid);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 14px 0 8px;
+}
+.cal-track > div {
+  height: 100%;
+  width: 0;
+  background: var(--accent-2);
+  border-radius: 999px;
+  transition: width 0.25s;
+}
+
+/* Meaning-check items: four German glosses instead of yes/no. */
+.cal-meaning { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.cal-meaning button { padding: 12px 10px; font-size: 14px; }
+
+.cal-size { font-size: 17px; margin: 4px 0; }
+.cal-size b { font: 600 var(--t-2xl)/1 var(--font-display); color: var(--ink); }
+
+
+@media (prefers-reduced-motion: reduce) {
+  .cal-track > div { transition: none; }
+}
 
 /* ── Stats dashboard ───────────────────────────────────────── */
 
@@ -332,12 +511,24 @@ button:disabled { opacity: 0.5; cursor: default; }
 .stat-tile {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px 16px;
+  border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-4);
   box-shadow: var(--shadow);
 }
-.stat-tile .num { font-size: 26px; font-weight: 700; color: var(--accent-ink); }
-.stat-tile .lbl { color: var(--muted); font-size: 12px; margin-top: 2px; }
+/* A number is emphatic because it is large and set in the display face, not
+   because it is coloured. */
+.stat-tile .num {
+  font: 600 var(--t-2xl)/1.15 var(--font-display);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.stat-tile .lbl {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
 
 .bar-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 13px; }
 .bar-row .bar-label { width: 92px; color: var(--ink-2); flex-shrink: 0; }
@@ -364,15 +555,15 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .level-wrap { display: flex; align-items: center; gap: 18px; }
 .level-badge {
-  font-size: 30px;
-  font-weight: 800;
-  color: #fff;
-  background: linear-gradient(135deg, var(--accent-2), var(--c-netflix));
-  border-radius: 14px;
+  font: 600 var(--t-3xl)/1 var(--font-display);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
   min-width: 72px;
   text-align: center;
-  padding: 14px 10px;
-  letter-spacing: 1px;
+  padding: var(--s-3) 10px;
+  letter-spacing: 0.02em;
 }
 .level-body { flex: 1; min-width: 0; }
 .level-meter {
@@ -397,9 +588,9 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .viz-tip {
   position: fixed; z-index: 100; display: none; pointer-events: none;
-  background: var(--raised); color: var(--ink); font-size: 12px;
-  padding: 4px 8px; border-radius: 6px;
-  box-shadow: var(--shadow);
+  background: var(--card); color: var(--ink); font-size: var(--t-sm);
+  padding: 5px 9px; border-radius: var(--r-sm);
+  box-shadow: var(--shadow-pop);
   border: 1px solid var(--line);
 }
 
@@ -419,5 +610,527 @@ button:disabled { opacity: 0.5; cursor: default; }
 .hardest-table .hw-tr { color: var(--ink-2); }
 .hardest-table .hw-n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 .hw-chip {
-  font-size: 10px; color: #fff; border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+  /* Same reasoning as the level buttons: the chip's background is a ramp colour
+     set inline from JS, and dark ink is the one that reads on all five. */
+  font-size: var(--t-xs); color: #14140f; border-radius: var(--r-sm);
+  padding: 1px 6px; white-space: nowrap; font-weight: 600;
 }
+
+/* ── Trening (grammar game) ──────────────────────────────────
+   Reuses the app's theme variables throughout; only --ok/--bad/--gold/--boss
+   are new, and they carry meaning rather than identity, so they stay stable
+   across themes the same way the learning-level ramp does. */
+
+
+
+.tr-hero { display: flex; flex-direction: column; gap: 14px; }
+.tr-hero-main { display: flex; align-items: center; gap: 14px; }
+.tr-hero-main h2 { margin: 0 0 2px; }
+.tr-hero-main .hint { margin: 0; }
+
+/* Żubr is a drawn mark (entrypoints/app/icons.ts), not the system emoji — the
+   emoji rendered as a different animal on every platform and never matched the
+   rest of the interface. */
+.tr-zubr { color: var(--accent); flex: none; line-height: 0; }
+.tr-zubr-big { display: block; margin: 0 auto var(--s-2); color: var(--accent); }
+.tr-icon { flex: none; vertical-align: -0.15em; }
+
+.tr-streak {
+  display: inline-flex; align-items: center; gap: var(--s-1);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 5px 10px; font-weight: 600; font-size: var(--t-lg);
+  font-variant-numeric: tabular-nums;
+}
+.tr-streak svg { color: var(--accent); }
+.tr-streak-cold { color: var(--muted); }
+.tr-streak-cold svg { color: var(--muted); }
+
+.tr-rank-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+.tr-rank-row span:first-child { font-weight: 600; letter-spacing: 0.01em; }
+.tr-rank-row span:last-child { color: var(--muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.tr-xp-track { height: 4px; background: var(--track-solid); border-radius: var(--r-full); overflow: hidden; }
+.tr-xp-fill {
+  height: 100%; border-radius: var(--r-full);
+  background: var(--accent);
+  transition: width 0.4s ease-out;
+}
+
+/* Two modes side by side — one habit, two doors. */
+.tr-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* Two doors into one habit, so they are peers: outlined cards rather than two
+   filled slabs. Filling both in the accent spent two thirds of the home screen
+   on it and left nothing to mark the actual primary action. */
+.tr-mode-btn {
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
+  padding: var(--s-3) var(--s-4); position: relative;
+  border-radius: var(--r-md); text-align: left;
+  background: var(--card);
+}
+.tr-mode-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.tr-mode-btn svg { color: var(--accent); margin-bottom: var(--s-1); }
+.tr-mode-title { font: 600 var(--t-lg)/1.2 var(--font-display); }
+.tr-mode-sub { font-size: var(--t-sm); color: var(--muted); font-weight: 400; }
+.tr-mode-streak {
+  font-size: var(--t-xs); font-weight: 600; min-height: 15px;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;
+}
+
+.tr-perfect {
+  background: var(--accent-soft); color: var(--accent-ink);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm); padding: var(--s-2) var(--s-3); margin-top: 10px;
+  font-weight: 600; font-size: var(--t-md); text-align: center;
+}
+
+@media (max-width: 480px) {
+  .tr-modes { grid-template-columns: 1fr; }
+}
+
+.tr-start { font-size: var(--t-lg); padding: var(--s-3) var(--s-4); width: 100%; }
+
+/* Concept map */
+.tr-tier { margin-bottom: 12px; }
+.tr-tier-label { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; }
+.tr-tier-nodes { display: flex; flex-wrap: wrap; gap: 6px; }
+.tr-node {
+  position: relative; overflow: hidden;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 7px 10px; font-size: var(--t-sm);
+  min-width: 150px; flex: 1 1 auto;
+}
+.tr-node span { position: relative; }
+.tr-node-bar { position: absolute; inset: 0; }
+.tr-node-bar > div { height: 100%; background: var(--accent); opacity: 0.18; transition: width 0.4s; }
+.tr-node-done { border-color: var(--ok); }
+.tr-node-active { border-color: var(--accent); }
+.tr-node-locked { opacity: 0.6; }
+.tr-node-soon { opacity: 0.35; font-style: italic; }
+
+/* Activity heatmap */
+.tr-heat { display: flex; flex-wrap: wrap; gap: 3px; }
+.tr-cell { width: 12px; height: 12px; border-radius: 2px; background: var(--heat-0); }
+.tr-cell-1 { background: var(--heat-1); }
+.tr-cell-2 { background: var(--heat-2); }
+.tr-cell-3 { background: var(--heat-3); }
+.tr-cell-4 { background: var(--heat-4); }
+
+/* Lesson */
+.tr-lesson-card { max-width: 660px; margin: 0 auto; }
+.tr-lesson-card p, .tr-lesson-card .hint { max-width: var(--measure); }
+.tr-lesson-badge {
+  display: inline-block; color: var(--accent);
+  border-bottom: 1px solid var(--accent);
+  padding: 0 0 3px; font-size: var(--t-xs);
+  font-weight: 600; letter-spacing: 0.10em; text-transform: uppercase;
+  margin-bottom: var(--s-3);
+}
+/* The hook is the one line meant to be read before anything else, so it gets
+   the display face rather than a colour. */
+.tr-hook {
+  font: 400 var(--t-xl)/1.45 var(--font-display);
+  color: var(--ink); max-width: var(--measure); margin: 0 0 var(--s-3);
+}
+.tr-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+.tr-table th {
+  text-align: left; color: var(--muted); font-weight: 600; font-size: var(--t-xs);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: var(--s-2) var(--s-2); border-bottom: 1px solid var(--n-4);
+}
+/* Forms in the table are the object of study — same face as the drill. */
+.tr-table td { padding: 7px var(--s-2); border-bottom: 1px solid var(--line); }
+.tr-table td:first-child { font-family: var(--font-display); font-size: var(--t-lg); }
+.tr-table tr:last-child td { border-bottom: 0; }
+
+.tr-note { border-left: 2px solid var(--line); padding: 2px 0 2px var(--s-3); margin: var(--s-4) 0; max-width: var(--measure); }
+.tr-note b { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.tr-note p { margin: 3px 0 0; }
+.tr-note-bridge { border-left-color: var(--accent); }
+.tr-note-trap { border-left-color: var(--bad); }
+.tr-note-mnemo { border-left-color: var(--gold); }
+
+/* Drill HUD */
+.tr-hud { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.tr-quit {
+  background: none; border-color: transparent; color: var(--muted); padding: 4px 8px;
+  font-size: var(--t-lg); line-height: 1; border-radius: var(--r-sm);
+}
+.tr-quit:hover { background: var(--raised); color: var(--ink); border-color: var(--line); }
+.tr-progress-track { flex: 1; height: 3px; background: var(--track-solid); border-radius: var(--r-full); overflow: hidden; }
+.tr-progress-fill { height: 100%; background: var(--accent); border-radius: var(--r-full); transition: width 0.3s; }
+.tr-clock { font-variant-numeric: tabular-nums; color: var(--muted); font-size: var(--t-md); min-width: 42px; text-align: right; }
+.tr-combo {
+  display: inline-flex; align-items: center; gap: 3px;
+  border: 1px solid var(--line); color: var(--ink);
+  border-radius: var(--r-sm); padding: 2px var(--s-2); font-weight: 600; font-size: var(--t-md);
+  font-variant-numeric: tabular-nums;
+}
+.tr-combo svg { color: var(--muted); }
+.tr-combo-hot { border-color: var(--accent); color: var(--accent-ink); }
+.tr-combo-hot svg { color: var(--accent); }
+
+/* Drill stage */
+.tr-stage { max-width: 620px; margin: 0 auto; text-align: center; }
+.tr-stage-boss { border-color: var(--boss); }
+.tr-phase {
+  font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.10em;
+  color: var(--muted); margin-bottom: var(--s-4);
+}
+.tr-prompt { color: var(--ink-2); margin: 0 0 var(--s-2); font-size: var(--t-md); }
+/* The sentence under study is the subject of the screen. */
+.tr-sentence {
+  font: 400 var(--t-2xl)/1.35 var(--font-display);
+  margin: var(--s-2) 0; letter-spacing: -0.005em;
+}
+.tr-cue { color: var(--muted); font-size: var(--t-md); margin: 0 0 var(--s-4); }
+
+.tr-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.tr-option {
+  padding: var(--s-3) 10px;
+  font: 400 var(--t-lg)/1.3 var(--font-display);
+  border: 1px solid var(--line);
+}
+.tr-option:disabled { opacity: 1; }
+/* Doubled class: `button:hover` (0,1,1) would otherwise outrank a single
+   result class (0,1,0) and paint the graded answer with the hover colour —
+   the cursor sits on the button you just clicked, so this is the normal case. */
+.tr-option.tr-option-right,
+.tr-option.tr-option-right:hover { background: var(--ok); color: var(--on-ok); border-color: var(--ok); filter: none; }
+.tr-option.tr-option-wrong,
+.tr-option.tr-option-wrong:hover { background: var(--bad); color: var(--on-bad); border-color: var(--bad); filter: none; }
+
+/* order: tap words to build the sentence, tap again to take them back. */
+.tr-order { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.tr-order-built {
+  min-height: 46px; width: 100%;
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center;
+  border-bottom: 1px dashed var(--n-4);
+  padding-bottom: 8px;
+}
+.tr-order-bank { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.tr-word { padding: 7px var(--s-3); font: 400 var(--t-lg)/1.2 var(--font-display); border: 1px solid var(--line); }
+.tr-word-used { opacity: 0.3; pointer-events: none; }
+
+.tr-freetext { display: flex; gap: 8px; justify-content: center; }
+.tr-freetext input { flex: 1; max-width: 280px; font: 400 var(--t-xl)/1.3 var(--font-display); padding: 10px var(--s-3); text-align: center; }
+
+.tr-feedback { margin-top: var(--s-4); }
+/* The correct answer after a wrong one — set apart in the display face because
+   this is the one string on the screen worth memorising. */
+.tr-answer { font-family: var(--font-display); font-weight: 400; color: var(--ink); }
+.tr-feedback-line {
+  font-size: var(--t-lg); font-weight: 600; margin-bottom: var(--s-1);
+  display: flex; align-items: center; justify-content: center; gap: var(--s-2);
+}
+.tr-feedback-line svg { flex: none; }
+.tr-feedback-line.tr-ok { color: var(--ok); }
+.tr-feedback-line.tr-bad { color: var(--bad); }
+.tr-feedback button { margin-top: 10px; }
+
+.tr-hint-btn { margin-top: 14px; font-size: 12px; }
+
+/* Summary */
+.tr-summary-card { max-width: 560px; margin: 0 auto; text-align: center; }
+.tr-summary-card .stat-tiles { margin: 16px 0; }
+.tr-streak-note {
+  font-size: var(--t-lg); font-weight: 600; margin: var(--s-2) 0; color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; gap: var(--s-2);
+}
+.tr-achievement {
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: var(--s-2) var(--s-3); margin: var(--s-2) 0; font-size: var(--t-md); text-align: left;
+  display: flex; align-items: center; gap: var(--s-2);
+}
+.tr-achievement svg { color: var(--accent); flex: none; }
+.tr-advance {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 7px 2px; border-bottom: 1px solid var(--line); text-align: left;
+}
+.tr-advance:last-child { border-bottom: 0; }
+
+@media (max-width: 560px) {
+  .tr-options { grid-template-columns: 1fr; }
+  .tr-sentence { font-size: 20px; }
+}
+
+/* Motion is decorative here — never required to understand feedback. */
+@media (prefers-reduced-motion: reduce) {
+  .tr-xp-fill, .tr-progress-fill, .tr-node-bar > div { transition: none; }
+}
+
+/* ── Celebration layer ───────────────────────────────────────
+   Confetti, banners and shake. All decoration: nothing here is required to
+   read the feedback, so prefers-reduced-motion can disable it wholesale. */
+
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 999;
+}
+
+.confetti-bit {
+  position: absolute;
+  top: -12px;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0.95;
+  animation: confetti-fall linear forwards;
+}
+
+@keyframes confetti-fall {
+  0%   { transform: translateY(-20px) rotate(0deg);   opacity: 1; }
+  100% { transform: translateY(102vh) rotate(720deg); opacity: 0.15; }
+}
+
+.shake { animation: shake-x 0.35s ease-in-out; }
+@keyframes shake-x {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+.celebrate-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  position: fixed;
+  left: 50%;
+  top: 76px;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-pop);
+  z-index: 1000;
+  animation: banner-in 2.6s ease-out forwards;
+}
+
+@keyframes banner-in {
+  0%   { opacity: 0; transform: translate(-50%, -14px); }
+  12%  { opacity: 1; transform: translate(-50%, 0); }
+  80%  { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -10px); }
+}
+
+/* Boss health bar. */
+.tr-boss-hp {
+  height: 6px;
+  background: var(--track-solid);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 4px 0 14px;
+}
+.tr-boss-hp > div {
+  height: 100%;
+  background: var(--boss);
+  border-radius: 999px;
+  transition: width 0.35s ease-out;
+}
+.tr-boss-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confetti-layer { display: none; }
+  .shake { animation: none; }
+  .celebrate-banner { animation: none; opacity: 1; }
+  .tr-boss-hp > div { transition: none; }
+}
+
+/* ── Depth: goal ring, quests, case grid, forecast, week ─────
+   Everything here renders data the game already had and never showed. The
+   visual language is the same one the rest of the app uses — hairlines, one
+   accent, the display face for numbers — so these read as more of the same
+   product rather than as a bolted-on dashboard. */
+
+.tr-card-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: var(--s-3);
+}
+.tr-card-head h2 { margin: 0; display: flex; align-items: center; gap: var(--s-2); }
+.tr-card-head h2 svg { color: var(--accent); }
+
+.tr-two-up { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+@media (max-width: 620px) { .tr-two-up { grid-template-columns: 1fr; } }
+
+/* Goal ring. An SVG circle with a dash offset — no library, and it animates
+   for free because stroke-dashoffset is a transitionable property. */
+.tr-goal { position: relative; flex: none; line-height: 0; }
+.tr-goal-track { fill: none; stroke: var(--track-solid); stroke-width: 3; }
+.tr-goal-fill {
+  fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round;
+  /* 2πr for r=19, set once so the JS only has to move the offset. */
+  stroke-dasharray: 119.38;
+  stroke-dashoffset: 119.38;
+  transition: stroke-dashoffset 0.6s ease-out;
+}
+.tr-goal-num {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--t-xs); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.tr-goal-met .tr-goal-num { color: var(--accent-ink); }
+
+/* Quests */
+.tr-quest {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s-3);
+  padding: var(--s-2) 0; border-bottom: 1px solid var(--line);
+}
+.tr-quest:last-child { border-bottom: 0; }
+/* Every child is placed explicitly. Leaving the count to auto-placement put it
+   in column 1 and pushed the title to column 2, which read as right-aligned. */
+.tr-quest-title {
+  grid-area: 1 / 1; font-weight: 600;
+  display: flex; align-items: center; gap: var(--s-2);
+}
+.tr-quest-title svg { color: var(--accent); flex: none; }
+.tr-quest-desc { grid-area: 2 / 1; color: var(--muted); font-size: var(--t-sm); }
+.tr-quest-count {
+  grid-area: 1 / 2 / span 2 / 3; align-self: center; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--muted); font-size: var(--t-sm);
+  white-space: nowrap;
+}
+.tr-quest-track {
+  grid-area: 3 / 1 / 4 / -1; height: 3px; background: var(--track-solid);
+  border-radius: var(--r-full); overflow: hidden; margin-top: var(--s-1);
+}
+.tr-quest-fill {
+  height: 100%; background: var(--accent); border-radius: var(--r-full);
+  transition: width 0.4s ease-out;
+}
+.tr-quest-done .tr-quest-title { color: var(--accent-ink); }
+.tr-quest-done .tr-quest-count { color: var(--accent-ink); font-weight: 600; }
+
+/* Case grid: 7 rows × 2 columns, the way a textbook lays the language out. */
+/* Capped rather than stretched: a full-width cell reads as an empty input
+   field, which is exactly what a never-practised cell looked like. */
+.tr-case-grid {
+  display: grid;
+  grid-template-columns: auto minmax(64px, 110px) minmax(64px, 110px);
+  gap: 3px var(--s-2);
+  align-items: center;
+  justify-content: start;
+}
+.tr-case-head {
+  font-size: var(--t-xs); color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.tr-case-label { font-size: var(--t-sm); color: var(--ink-2); white-space: nowrap; }
+.tr-case-cell {
+  height: 22px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--heat-0);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums;
+}
+/* The four states are the heat ramp, so the grid and the activity heatmap
+   belong to the same visual family. */
+/* Never practised: a hairline outline with nothing in it, so the grid reads as
+   "not yet" rather than as a form to fill in. */
+.tr-case-new { background: none; }
+/* Each step brings its own ink — see --on-heat-* in the token block. */
+.tr-case-shaky { background: var(--heat-1); color: var(--on-heat-1); }
+.tr-case-learning { background: var(--heat-2); color: var(--on-heat-2); }
+.tr-case-solid { background: var(--heat-4); color: var(--on-heat-4); border-color: var(--heat-4); }
+.tr-case-absent { background: none; border-style: dashed; opacity: 0.5; }
+.tr-case-weak { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+/* Review forecast: an inline bar chart, same idiom as the daily chart. */
+.tr-forecast { display: flex; align-items: flex-end; gap: 2px; height: 72px; }
+.tr-fc-day { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 1px; height: 100%; }
+.tr-fc-bar { border-radius: 2px 2px 0 0; min-height: 0; }
+.tr-fc-concepts { background: var(--accent); }
+.tr-fc-cards { background: var(--n-4); }
+.tr-fc-today .tr-fc-bar { outline: 1px solid var(--accent); outline-offset: 1px; }
+.tr-fc-axis {
+  display: flex; justify-content: space-between;
+  color: var(--muted); font-size: var(--t-xs); margin-top: var(--s-1);
+}
+.tr-fc-empty { color: var(--muted); font-size: var(--t-sm); }
+
+/* This week vs your own best */
+.tr-week-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--line);
+}
+.tr-week-row:last-child { border-bottom: 0; }
+.tr-week-num { font: 600 var(--t-xl)/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.tr-week-bar { height: 4px; background: var(--track-solid); border-radius: var(--r-full); overflow: hidden; margin-top: var(--s-1); }
+.tr-week-bar > div { height: 100%; border-radius: var(--r-full); }
+.tr-week-ahead { color: var(--accent-ink); font-weight: 600; }
+
+/* Badge shelf */
+.tr-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: var(--s-2);
+}
+.tr-badge {
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: var(--s-3); display: flex; flex-direction: column; gap: 2px;
+  /* Unearned badges are dimmed, not hidden — a shelf with gaps is a ladder. */
+  opacity: 0.5;
+}
+.tr-badge-on { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+.tr-badge-mark {
+  display: flex; align-items: center; justify-content: space-between;
+  color: var(--muted); margin-bottom: var(--s-1);
+}
+.tr-badge-on .tr-badge-mark { color: var(--accent); }
+.tr-badge-tier {
+  font-size: var(--t-xs); font-variant-numeric: tabular-nums;
+  color: var(--muted); letter-spacing: 0.04em;
+}
+.tr-badge-title { font: 600 var(--t-lg)/1.2 var(--font-display); }
+.tr-badge-sub { color: var(--muted); font-size: var(--t-xs); }
+.tr-badge-track {
+  height: 3px; background: var(--track-solid); border-radius: var(--r-full);
+  overflow: hidden; margin-top: var(--s-2);
+}
+.tr-badge-track > div {
+  height: 100%; background: var(--accent); border-radius: var(--r-full);
+  transition: width 0.4s ease-out;
+}
+/* A moment either happened or it did not, so there is no bar to show. */
+.tr-badge-moment .tr-badge-sub {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Session diff on the summary */
+.tr-diff { text-align: left; margin-top: var(--s-3); }
+.tr-diff-group { margin-bottom: var(--s-3); }
+.tr-diff-label {
+  font-size: var(--t-xs); color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--s-1);
+}
+.tr-diff-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); padding: 5px 0; border-bottom: 1px solid var(--line); font-size: var(--t-md);
+}
+.tr-diff-row:last-child { border-bottom: 0; }
+.tr-diff-when { color: var(--muted); font-size: var(--t-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tr-diff-up .tr-diff-when { color: var(--ok); }
+.tr-diff-down .tr-diff-when { color: var(--bad); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tr-goal-fill, .tr-quest-fill, .tr-badge-track > div { transition: none; }
+}
+
+/* ── Icons ───────────────────────────────────────────────────
+   entrypoints/app/icons.ts renders these. Nothing here sets a colour: an icon
+   inherits `currentColor` from the text beside it, which is what keeps a set
+   of twenty-two marks looking like one set. */
+
+.ic { display: inline-block; flex: none; vertical-align: -0.15em; }
+/* The [data-icon] placeholders are filled at startup; before that they must
+   occupy no space, or the first paint jumps. */
+i[data-icon] { display: inline-flex; line-height: 0; }

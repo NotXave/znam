@@ -156,6 +156,13 @@ async function init() {
     window.close()
   })
 
+  // The daily habit needs a one-click entry point from the toolbar, not a
+  // three-click dig through the dashboard.
+  $('open-trening').addEventListener('click', () => {
+    browser.tabs.create({ url: browser.runtime.getURL('/app.html') + '#trening' })
+    window.close()
+  })
+
   refreshToggleState()
   refreshLanguageState(settings.targetLanguage)
 }

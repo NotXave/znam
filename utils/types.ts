@@ -1,3 +1,7 @@
+import type { SessionResult } from './grammar/types'
+import type { CalibrationAnswer } from './calibration'
+import type { VocabResult } from './vocab-bg'
+
 // ── Word knowledge ──────────────────────────────────────────
 
 export type WordStatus = 'learning' | 'known' | 'ignored'
@@ -72,6 +76,11 @@ export interface LanguageState {
   dictForms: number
   freqReady: boolean
   freqLemmas: number
+  /**
+   * Size of the recognised-word list. Zero means the trainers cannot tell a
+   * word from a name, which is the state every pre-v4 install starts in.
+   */
+  knownLemmas: number
   calibratedAt?: number
   counts: { learning: number; known: number; ignored: number }
 }
@@ -119,6 +128,18 @@ export interface Settings {
   netflixShowNative: boolean
   /** Dashboard theme (app page): midnight | daylight | nord | sepia. */
   appTheme: string
+  /** Grammar game: length of one daily session, in minutes. */
+  grammarDailyMinutes: number
+  /** Grammar game: how many new concepts may be introduced per session. */
+  grammarNewPerDay: number
+  /** Grammar game: short synthesized feedback blips (no asset files). */
+  grammarSound: boolean
+  /** Grammar game: confetti/shake animations (also honours prefers-reduced-motion). */
+  grammarMotion: boolean
+  /** Vocabulary trainer: only drill words at or below this frequency rank. */
+  vocabMaxRank: number
+  /** Vocabulary trainer: length of one daily session, in minutes. */
+  vocabDailyMinutes: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -142,6 +163,12 @@ export const DEFAULT_SETTINGS: Settings = {
   netflixAudioDeviceId: '',
   netflixShowNative: true,
   appTheme: 'midnight',
+  grammarDailyMinutes: 15,
+  grammarNewPerDay: 1,
+  grammarSound: true,
+  grammarMotion: true,
+  vocabMaxRank: 3000,
+  vocabDailyMinutes: 10,
 }
 
 // ── Lookup results (reused from manga-translator) ───────────
@@ -279,11 +306,43 @@ export type Message =
       }
     }
   | { type: 'CALIBRATION_SAMPLE'; payload: { lang: string } }
-  | { type: 'CALIBRATION_ESTIMATE'; payload: { answers: { rank: number; known: boolean }[] } }
-  | { type: 'CALIBRATION_APPLY'; payload: { lang: string; topN: number } }
+  /** Adaptive quiz: given the answers so far, return the next item or finish. */
+  | {
+      type: 'CALIBRATION_NEXT'
+      payload: { lang: string; answers: CalibrationAnswer[]; used: string[] }
+    }
+  | { type: 'CALIBRATION_ESTIMATE'; payload: { lang: string; answers: CalibrationAnswer[] } }
+  | {
+      type: 'CALIBRATION_APPLY'
+      payload: {
+        lang: string
+        /** Ranks up to here are recorded as known … */
+        knownUpTo: number
+        /** … and up to here as `learning`, graded by confidence. */
+        learningUpTo: number
+        /** Carried so the band levels can be scaled by the fitted posterior. */
+        answers?: CalibrationAnswer[]
+      }
+    }
+  /** Reverse the last calibration run for a language. */
+  | { type: 'CALIBRATION_UNDO'; payload: { lang: string } }
   | { type: 'SCORE_VIDEOS'; payload: { lang: string; videoIds: string[] } }
   | { type: 'GET_SETTINGS' }
   | { type: 'SETTINGS_UPDATED'; payload: Settings }
+  /** Grammar game: is the morphology table installed for this language? */
+  | { type: 'GRAMMAR_STATE'; payload: { lang: string } }
+  /** Build today's session plan (all exercises pre-generated in one go). */
+  | { type: 'GRAMMAR_SESSION_START'; payload: { lang: string; minutes: number } }
+  /** Persist a finished session: SRS update, drill log, streak, XP. */
+  | { type: 'GRAMMAR_SESSION_END'; payload: { lang: string; result: SessionResult } }
+  /** Concept mastery + game state, for the home screen and concept map. */
+  | { type: 'GRAMMAR_PROGRESS'; payload: { lang: string } }
+  /** Vocabulary trainer: build today's card set. */
+  | { type: 'VOCAB_SESSION_START'; payload: { lang: string; minutes: number } }
+  /** Vocabulary trainer: persist results (SRS + streak + XP). */
+  | { type: 'VOCAB_SESSION_END'; payload: { lang: string; result: VocabResult } }
+  /** Vocabulary trainer: home-screen state. */
+  | { type: 'VOCAB_PROGRESS'; payload: { lang: string } }
   /** Popup/command → content script. */
   | { type: 'TOGGLE_READER' }
   | { type: 'GET_READER_STATE' }

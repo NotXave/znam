@@ -1,7 +1,15 @@
 import type { LibraryEntry, WordRecord } from './types'
+import type { ConceptProgress, SessionDay } from './grammar/types'
+import type { VocabCard } from './grammar/vocab'
 
 const DB_NAME = 'znam'
-const DB_VERSION = 1
+/**
+ * v2 added the grammar-game stores: morph, grammar, drills, sessions.
+ * v3 added `vocab` for the Słówka trainer.
+ * v4 added `known` — the dictionary's vocabulary judgement, which keeps the
+ *    trainers from drilling proper nouns the frequency list happens to rank.
+ */
+const DB_VERSION = 4
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -27,6 +35,35 @@ export function openDb(): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains('videos')) {
           db.createObjectStore('videos', { keyPath: 'videoId' })
+        }
+        // ── v2: grammar game ──
+        // Every store is guarded, so upgrading from v1 is purely additive and
+        // no existing data is touched.
+        if (!db.objectStoreNames.contains('morph')) {
+          const morph = db.createObjectStore('morph', { keyPath: ['lang', 'lemma', 'tag'] })
+          morph.createIndex('byLemma', ['lang', 'lemma'], { unique: false })
+          morph.createIndex('byForm', ['lang', 'form'], { unique: false })
+        }
+        if (!db.objectStoreNames.contains('grammar')) {
+          const grammar = db.createObjectStore('grammar', { keyPath: ['lang', 'conceptId'] })
+          grammar.createIndex('byDue', ['lang', 'due'], { unique: false })
+        }
+        if (!db.objectStoreNames.contains('drills')) {
+          const drills = db.createObjectStore('drills', { keyPath: 'id', autoIncrement: true })
+          drills.createIndex('byDay', 'date', { unique: false })
+          drills.createIndex('byConcept', ['lang', 'conceptId'], { unique: false })
+        }
+        if (!db.objectStoreNames.contains('sessions')) {
+          db.createObjectStore('sessions', { keyPath: ['lang', 'date'] })
+        }
+        // ── v3: vocabulary trainer ──
+        if (!db.objectStoreNames.contains('vocab')) {
+          const vocab = db.createObjectStore('vocab', { keyPath: ['lang', 'lemma'] })
+          vocab.createIndex('byDue', ['lang', 'due'], { unique: false })
+        }
+        // ── v4: recognised-vocabulary list ──
+        if (!db.objectStoreNames.contains('known')) {
+          db.createObjectStore('known', { keyPath: ['lang', 'lemma'] })
         }
       }
       req.onsuccess = () => resolve(req.result)
@@ -80,6 +117,43 @@ export async function putWords(records: WordRecord[]): Promise<void> {
   await txDone(tx)
 }
 
+/**
+ * Write in chunks, reporting progress. Calibration can produce tens of
+ * thousands of records, and a single transaction that size gives no feedback
+ * and aborts atomically if the quota is hit.
+ */
+export async function putWordsChunked(
+  records: WordRecord[],
+  chunk = 2000,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  for (let i = 0; i < records.length; i += chunk) {
+    await putWords(records.slice(i, i + chunk))
+    onProgress?.(Math.min(i + chunk, records.length), records.length)
+  }
+}
+
+/**
+ * Delete every word written by one bulk run, identified by source + timestamp.
+ * This is what makes a calibration reversible — previously the write was
+ * permanent with no reverse anywhere in the codebase.
+ */
+export async function deleteWordsByRun(
+  lang: string,
+  source: WordRecord['source'],
+  createdAt: number,
+): Promise<number> {
+  const words = await getAllWords(lang)
+  const doomed = words.filter(w => w.source === source && w.createdAt === createdAt)
+  if (doomed.length === 0) return 0
+  const db = await openDb()
+  const tx = db.transaction('words', 'readwrite')
+  const store = tx.objectStore('words')
+  for (const w of doomed) store.delete([w.lang, w.lemma])
+  await txDone(tx)
+  return doomed.length
+}
+
 export async function deleteWord(lang: string, lemma: string): Promise<void> {
   const db = await openDb()
   const tx = db.transaction('words', 'readwrite')
@@ -120,11 +194,53 @@ export async function countLemmaRows(lang: string): Promise<number> {
 
 export async function clearLanguageData(lang: string): Promise<void> {
   const db = await openDb()
-  const tx = db.transaction(['lemmas', 'freq'], 'readwrite')
+  const tx = db.transaction(['lemmas', 'freq', 'known'], 'readwrite')
   const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
   tx.objectStore('lemmas').delete(range)
   tx.objectStore('freq').delete(range)
+  tx.objectStore('known').delete(range)
   await txDone(tx)
+}
+
+// ── known (lemmas a dictionary recognises as words) ─────────
+
+/**
+ * The vocabulary judgement the frequency list cannot make.
+ *
+ * OpenSubtitles ranks `liam` at 4000 and `boho` at 157; both are perfectly
+ * real tokens for the reader's comprehension score and perfectly useless as
+ * quiz items. This store holds the subset the source dictionary recognises as
+ * ordinary vocabulary, built by scripts/build-known-lemmas.mjs.
+ */
+export async function putKnownLemmas(lang: string, lemmas: string[]): Promise<void> {
+  if (lemmas.length === 0) return
+  const db = await openDb()
+  const tx = db.transaction('known', 'readwrite')
+  const store = tx.objectStore('known')
+  for (const lemma of lemmas) store.put({ lang, lemma })
+  await txDone(tx)
+}
+
+export async function countKnownRows(lang: string): Promise<number> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
+  return reqResult(db.transaction('known').objectStore('known').count(range))
+}
+
+/**
+ * The whole set for one language, or an EMPTY set when none is installed.
+ *
+ * Callers must treat empty as "no judgement available" and skip filtering
+ * rather than rejecting everything — otherwise an older install, or a language
+ * with no dictionary source, would silently get an empty trainer.
+ */
+export async function getKnownLemmas(lang: string): Promise<Set<string>> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
+  const rows = await reqResult<{ lemma: string }[]>(
+    db.transaction('known').objectStore('known').getAll(range),
+  )
+  return new Set(rows.map(r => r.lemma))
 }
 
 // ── freq (lemma frequency ranks) ────────────────────────────
@@ -238,5 +354,183 @@ export async function putVideoScore(row: VideoScoreRow): Promise<void> {
   const db = await openDb()
   const tx = db.transaction('videos', 'readwrite')
   tx.objectStore('videos').put(row)
+  await txDone(tx)
+}
+
+// ── morph (tagged inflection table, for the grammar game) ───
+
+export interface MorphRow {
+  lang: string
+  lemma: string
+  /** Canonical dot-joined tag, e.g. 'sg.gen' or 'past.p1.sg.m'. */
+  tag: string
+  pos: 'N' | 'A' | 'V'
+  form: string
+}
+
+export async function putMorphRows(rows: MorphRow[]): Promise<void> {
+  if (rows.length === 0) return
+  const db = await openDb()
+  const tx = db.transaction('morph', 'readwrite')
+  const store = tx.objectStore('morph')
+  for (const row of rows) store.put(row)
+  await txDone(tx)
+}
+
+export async function countMorphRows(lang: string): Promise<number> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, '', ''], [lang, '￿', '￿'])
+  return reqResult(db.transaction('morph').objectStore('morph').count(range))
+}
+
+/** The whole paradigm of one lemma. */
+export async function getMorphForms(lang: string, lemma: string): Promise<MorphRow[]> {
+  const db = await openDb()
+  const idx = db.transaction('morph').objectStore('morph').index('byLemma')
+  return reqResult(idx.getAll(IDBKeyRange.only([lang, lemma])))
+}
+
+/** One specific cell of the paradigm, or undefined if the lemma lacks it. */
+export async function getMorphForm(
+  lang: string,
+  lemma: string,
+  tag: string,
+): Promise<MorphRow | undefined> {
+  const db = await openDb()
+  return reqResult(db.transaction('morph').objectStore('morph').get([lang, lemma, tag]))
+}
+
+/** Every lemma that has at least one form in the table (the "usable" set). */
+export async function getMorphLemmas(lang: string): Promise<Set<string>> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, '', ''], [lang, '￿', '￿'])
+  const rows = await reqResult<MorphRow[]>(db.transaction('morph').objectStore('morph').getAll(range))
+  return new Set(rows.map(r => r.lemma))
+}
+
+export async function clearMorph(lang: string): Promise<void> {
+  const db = await openDb()
+  const tx = db.transaction('morph', 'readwrite')
+  tx.objectStore('morph').delete(IDBKeyRange.bound([lang, '', ''], [lang, '￿', '￿']))
+  await txDone(tx)
+}
+
+// ── grammar (per-concept SRS progress) ──────────────────────
+
+export async function getAllConceptProgress(lang: string): Promise<ConceptProgress[]> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
+  return reqResult(db.transaction('grammar').objectStore('grammar').getAll(range))
+}
+
+/** Every language's concept progress — for the backup export. */
+export async function getAllConceptProgressEveryLang(): Promise<ConceptProgress[]> {
+  const db = await openDb()
+  return reqResult(db.transaction('grammar').objectStore('grammar').getAll())
+}
+
+export async function getConceptProgress(
+  lang: string,
+  conceptId: string,
+): Promise<ConceptProgress | undefined> {
+  const db = await openDb()
+  return reqResult(db.transaction('grammar').objectStore('grammar').get([lang, conceptId]))
+}
+
+export async function putConceptProgress(rows: ConceptProgress[]): Promise<void> {
+  if (rows.length === 0) return
+  const db = await openDb()
+  const tx = db.transaction('grammar', 'readwrite')
+  const store = tx.objectStore('grammar')
+  for (const row of rows) store.put(row)
+  await txDone(tx)
+}
+
+/** Concepts whose `due` has passed, soonest first. */
+export async function getDueConcepts(lang: string, now: number): Promise<ConceptProgress[]> {
+  const db = await openDb()
+  const idx = db.transaction('grammar').objectStore('grammar').index('byDue')
+  const rows = await reqResult<ConceptProgress[]>(
+    idx.getAll(IDBKeyRange.bound([lang, -Infinity], [lang, now])),
+  )
+  return rows.sort((a, b) => a.due - b.due)
+}
+
+// ── drills (per-item attempt log) ───────────────────────────
+
+export interface DrillRow {
+  id?: number
+  lang: string
+  /** YYYY-MM-DD. */
+  date: string
+  conceptId: string
+  templateId: string
+  correct: boolean
+  ms: number
+}
+
+export async function putDrillRows(rows: DrillRow[]): Promise<void> {
+  if (rows.length === 0) return
+  const db = await openDb()
+  const tx = db.transaction('drills', 'readwrite')
+  const store = tx.objectStore('drills')
+  for (const row of rows) store.add(row)
+  await txDone(tx)
+}
+
+export async function getDrillsSince(lang: string, sinceDate: string): Promise<DrillRow[]> {
+  const db = await openDb()
+  const rows = await reqResult<DrillRow[]>(db.transaction('drills').objectStore('drills').getAll())
+  return rows.filter(r => r.lang === lang && r.date >= sinceDate)
+}
+
+/** Every drill row, for the backup export. */
+export async function getAllDrills(): Promise<DrillRow[]> {
+  const db = await openDb()
+  return reqResult(db.transaction('drills').objectStore('drills').getAll())
+}
+
+// ── vocab (per-word SRS cards for the Słówka trainer) ───────
+
+export async function getVocabCards(lang: string): Promise<VocabCard[]> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
+  return reqResult(db.transaction('vocab').objectStore('vocab').getAll(range))
+}
+
+export async function getAllVocabCards(): Promise<VocabCard[]> {
+  const db = await openDb()
+  return reqResult(db.transaction('vocab').objectStore('vocab').getAll())
+}
+
+export async function putVocabCards(cards: VocabCard[]): Promise<void> {
+  if (cards.length === 0) return
+  const db = await openDb()
+  const tx = db.transaction('vocab', 'readwrite')
+  const store = tx.objectStore('vocab')
+  for (const card of cards) store.put(card)
+  await txDone(tx)
+}
+
+// ── sessions (one row per completed day) ────────────────────
+
+export async function getSessionDays(lang: string): Promise<SessionDay[]> {
+  const db = await openDb()
+  const range = IDBKeyRange.bound([lang, ''], [lang, '￿'])
+  const rows = await reqResult<SessionDay[]>(
+    db.transaction('sessions').objectStore('sessions').getAll(range),
+  )
+  return rows.sort((a, b) => a.date.localeCompare(b.date))
+}
+
+export async function getAllSessionDays(): Promise<SessionDay[]> {
+  const db = await openDb()
+  return reqResult(db.transaction('sessions').objectStore('sessions').getAll())
+}
+
+export async function putSessionDay(row: SessionDay): Promise<void> {
+  const db = await openDb()
+  const tx = db.transaction('sessions', 'readwrite')
+  tx.objectStore('sessions').put(row)
   await txDone(tx)
 }

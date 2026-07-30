@@ -1,0 +1,385 @@
+import type { SetupEvent } from './types'
+import type { ConceptProgress, GameState, SessionPlan, SessionResult } from './grammar/types'
+import {
+  getAllConceptProgress,
+  getAllWords,
+  getFreqRanks,
+  getSessionDays,
+  getVocabCards,
+  putConceptProgress,
+  putDrillRows,
+  putSessionDay,
+  type DrillRow,
+} from './db'
+import { installMorph, loadParadigms, morphInstalled, usableLemmas } from './grammar/morph'
+import { buildPlan } from './grammar/plan'
+import { applySession } from './grammar/srs'
+import { advanceStreak, newAchievements, newGameState, rankFor, scoreSession } from './grammar/gamify'
+import { CONCEPTS } from './grammar/curriculum'
+import { AUTHORED_CONCEPTS } from './grammar/lessons.de'
+import { dayKey } from './grammar/session'
+import type { VocabRank } from './grammar/generator'
+import { grammarContribution } from './grammar/quests'
+import { recordSession, questsView } from './quests-bg'
+import {
+  caseMasteryGrid,
+  goalProgress,
+  longestStreak,
+  reviewForecast,
+  sessionDiff,
+  weakestCase,
+  weekCompare,
+  type SessionDiff,
+} from './grammar/stats'
+import { shelf } from './grammar/badges'
+
+/**
+ * Background-side glue for the grammar game: it owns IndexedDB and the game
+ * state, so the app page only ever exchanges plain JSON with it.
+ *
+ * Exercises are generated here in ONE pass per session (~60 small objects)
+ * rather than per item — the drill UI must never wait on a message round-trip
+ * between questions.
+ */
+
+const GAME_KEY = 'grammarGame'
+
+/**
+ * Trening and Słówka keep SEPARATE streaks, so their state is namespaced by
+ * mode. The grammar entry keeps the bare language key it has always used, so
+ * existing streaks survive the upgrade untouched.
+ */
+export type GameMode = 'grammar' | 'vocab'
+
+const gameKeyFor = (lang: string, mode: GameMode) => (mode === 'grammar' ? lang : `${lang}:${mode}`)
+
+// ── game state (browser.storage.local, alongside settings) ──
+
+export async function getGameState(lang: string, mode: GameMode = 'grammar'): Promise<GameState> {
+  const stored = await browser.storage.local.get(GAME_KEY)
+  const all = (stored[GAME_KEY] as Record<string, GameState>) ?? {}
+  return all[gameKeyFor(lang, mode)] ?? newGameState(lang)
+}
+
+export async function saveGameStateFor(
+  lang: string,
+  mode: GameMode,
+  state: GameState,
+): Promise<void> {
+  const stored = await browser.storage.local.get(GAME_KEY)
+  const all = (stored[GAME_KEY] as Record<string, GameState>) ?? {}
+  all[gameKeyFor(lang, mode)] = state
+  await browser.storage.local.set({ [GAME_KEY]: all })
+}
+
+async function saveGameState(state: GameState): Promise<void> {
+  await saveGameStateFor(state.lang, 'grammar', state)
+}
+
+// ── morph install (port 'grammar-setup') ────────────────────
+
+/** Bundled artifact if present, otherwise the repo copy. */
+const DATA_BASE = 'https://raw.githubusercontent.com/NotXave/znam/main/public/data'
+
+async function loadMorphTsv(lang: string): Promise<string> {
+  try {
+    // Cast: WXT types getURL against literal public paths, ours is dynamic
+    const resp = await fetch(browser.runtime.getURL(`/data/${lang}.morph.tsv` as any))
+    if (resp.ok) return await resp.text()
+  } catch {
+    // not bundled for this language
+  }
+  const resp = await fetch(`${DATA_BASE}/${lang}.morph.tsv`)
+  if (!resp.ok) throw new Error(`Keine Grammatikdaten für "${lang}" (HTTP ${resp.status})`)
+  return await resp.text()
+}
+
+export function handleGrammarSetupPort(port: any): void {
+  const post = (event: SetupEvent) => {
+    try { port.postMessage(event) } catch { /* port closed */ }
+  }
+
+  port.onMessage.addListener(async (msg: { type: string; lang: string }) => {
+    if (msg.type !== 'SETUP_GRAMMAR') return
+    try {
+      post({ type: 'PROGRESS', step: 'download', pct: 0, detail: 'Formentabelle wird geladen' })
+      const tsv = await loadMorphTsv(msg.lang)
+      post({ type: 'PROGRESS', step: 'parse', pct: 100, detail: 'Wird gespeichert' })
+      const rows = await installMorph(msg.lang, tsv, (pct, detail) => {
+        post({ type: 'PROGRESS', step: 'store', pct, detail })
+      })
+      post({
+        type: 'DONE',
+        state: { lang: msg.lang, dictReady: true, dictForms: rows, freqReady: true, freqLemmas: 0, knownLemmas: 0, counts: { learning: 0, known: 0, ignored: 0 } },
+      })
+    } catch (err: any) {
+      post({ type: 'ERROR', error: err.message || String(err) })
+    }
+  })
+}
+
+// ── message handlers ────────────────────────────────────────
+
+export interface GrammarState {
+  installed: boolean
+  forms: number
+  concepts: number
+  authored: number
+}
+
+export async function grammarState(lang: string): Promise<GrammarState> {
+  const forms = await morphInstalled(lang)
+  return {
+    installed: forms > 0,
+    forms,
+    concepts: CONCEPTS.length,
+    authored: AUTHORED_CONCEPTS.size,
+  }
+}
+
+/** The learner's vocabulary, shaped the way the generator wants it. */
+async function vocabFor(lang: string, lemmas: string[]): Promise<VocabRank> {
+  const words = await getAllWords(lang)
+  const learning = new Set<string>()
+  const known = new Set<string>()
+  const ignored = new Set<string>()
+  for (const w of words) {
+    if (w.status === 'learning') learning.add(w.lemma)
+    else if (w.status === 'known') known.add(w.lemma)
+    else if (w.status === 'ignored') ignored.add(w.lemma)
+  }
+  const rank = await getFreqRanks(lang, lemmas)
+  return { learning, known, ignored, rank }
+}
+
+export async function startGrammarSession(lang: string, minutes: number): Promise<SessionPlan | { error: string }> {
+  const forms = await morphInstalled(lang)
+  if (forms === 0) {
+    return { error: 'Grammatikdaten sind für diese Sprache noch nicht installiert.' }
+  }
+
+  const now = Date.now()
+  const lemmas = await usableLemmas(lang)
+  const [paradigms, vocab, progress, settings] = await Promise.all([
+    loadParadigms(lang, lemmas),
+    vocabFor(lang, lemmas),
+    getAllConceptProgress(lang),
+    browser.storage.local.get('settings'),
+  ])
+
+  const newPerDay = (settings.settings as any)?.grammarNewPerDay ?? 1
+
+  const plan = buildPlan({
+    lang,
+    minutes,
+    now,
+    progress,
+    paradigms,
+    vocab,
+    newPerDay,
+  })
+
+  if (plan.exercises.length === 0) {
+    return { error: 'Keine Übungen verfügbar — bitte zuerst die Sprachdaten installieren.' }
+  }
+  return plan
+}
+
+export interface SessionSummary {
+  xp: number
+  xpTotal: number
+  streak: number
+  freezeUsed: boolean
+  streakBroken: boolean
+  maxCombo: number
+  achievements: string[]
+  rankId: string
+  correct: number
+  total: number
+  conceptsAdvanced: { conceptId: string; mastery: number; intervalDays: number }[]
+  /** What actually changed — see grammar/stats.ts. */
+  diff: SessionDiff
+  /** Weekly quests finished by this session, and the bonus they paid. */
+  questsCompleted: { titleDe: string; xp: number }[]
+  questXp: number
+}
+
+export async function endGrammarSession(
+  lang: string,
+  result: SessionResult,
+): Promise<SessionSummary> {
+  const now = Date.now()
+  const today = dayKey(now)
+  const attempts = result.attempts
+
+  // ── SRS ──
+  const existing = await getAllConceptProgress(lang)
+  const updated: ConceptProgress[] = applySession(existing, attempts, lang, now)
+  await putConceptProgress(updated)
+  // Computed from the BEFORE snapshot, which only exists here.
+  const diff = sessionDiff(existing, updated)
+
+  // ── attempt log ──
+  const drills: DrillRow[] = attempts.map(a => ({
+    lang,
+    date: today,
+    conceptId: a.conceptId,
+    templateId: a.templateId,
+    correct: a.correct,
+    ms: a.ms,
+  }))
+  await putDrillRows(drills)
+
+  // ── XP, streak, achievements ──
+  const correct = attempts.filter(a => a.correct).length
+  const completed = result.seconds >= 60 && attempts.length > 0
+  const xp = scoreSession(attempts, { lessonShown: !!result.attempts.some(a => a.phase === 'lesson'), completed })
+
+  let game = await getGameState(lang)
+  const streakUpdate = advanceStreak(game, today)
+  game = streakUpdate.state
+  const unlocked = newAchievements(game, attempts, xp.maxCombo, game.streak)
+  game = {
+    ...game,
+    xp: game.xp + xp.total,
+    achievements: [...game.achievements, ...unlocked],
+  }
+  await saveGameState(game)
+
+  // ── weekly quests ──
+  // After the game state is saved, so a quest that depends on today counting as
+  // a Trening day sees it. Quest XP is added on top by recordSession.
+  const quests = await recordSession(
+    lang, 'grammar',
+    grammarContribution(attempts, xp.maxCombo, diff.introduced.length),
+    today, now,
+  )
+
+  // ── daily record (streak + heatmap) ──
+  const days = await getSessionDays(lang)
+  const prior = days.find(d => d.date === today)
+  await putSessionDay({
+    lang,
+    date: today,
+    seconds: (prior?.seconds ?? 0) + result.seconds,
+    items: (prior?.items ?? 0) + attempts.length,
+    correct: (prior?.correct ?? 0) + correct,
+    xp: (prior?.xp ?? 0) + xp.total,
+  })
+
+  return {
+    xp: xp.total + quests.xp,
+    xpTotal: game.xp + quests.xp,
+    streak: game.streak,
+    freezeUsed: streakUpdate.freezeUsed,
+    streakBroken: streakUpdate.broken,
+    maxCombo: xp.maxCombo,
+    achievements: unlocked,
+    rankId: rankFor(game.xp).id,
+    correct,
+    total: attempts.length,
+    conceptsAdvanced: diff.advanced.map(u => ({
+      conceptId: u.conceptId,
+      mastery: u.mastery,
+      intervalDays: u.toDays,
+    })),
+    diff,
+    questsCompleted: quests.completed.map(q => ({ titleDe: q.titleDe, xp: q.xp })),
+    questXp: quests.xp,
+  }
+}
+
+export interface GrammarProgressView {
+  game: GameState
+  concepts: {
+    id: string
+    titleDe: string
+    tier: number
+    group: string
+    authored: boolean
+    mastery: number
+    intervalDays: number
+    due: number
+    seen: number
+    lapses: number
+  }[]
+  days: { date: string; seconds: number; items: number; correct: number; xp: number }[]
+  state: GrammarState
+  /** Progress toward today's goal — the ring that replaced the countdown. */
+  goal: ReturnType<typeof goalProgress>
+  /** The 7 × 2 case-by-number heat grid, plus the softest corner. */
+  cases: ReturnType<typeof caseMasteryGrid>
+  weakest?: { conceptId?: string; case: string; number: string; titleDe: string }
+  /** How much comes back due over the next fortnight. */
+  forecast: ReturnType<typeof reviewForecast>
+  /** This week against your own best week. */
+  week: ReturnType<typeof weekCompare>
+  quests: Awaited<ReturnType<typeof questsView>>
+  /** Tiered badges plus the one-off achievements, with progress. */
+  shelf: ReturnType<typeof shelf>
+}
+
+export async function grammarProgress(lang: string): Promise<GrammarProgressView> {
+  const now = Date.now()
+  const [game, progress, days, state, cards, quests] = await Promise.all([
+    getGameState(lang),
+    getAllConceptProgress(lang),
+    getSessionDays(lang),
+    grammarState(lang),
+    getVocabCards(lang).catch(() => []),
+    questsView(lang, now),
+  ])
+  const byId = new Map(progress.map(p => [p.conceptId, p]))
+
+  // The goal ring counts BOTH trainers: the day's record is shared, which is the
+  // point — fifteen minutes of Polish is fifteen minutes of Polish.
+  const today = days.find(d => d.date === dayKey(now))
+  const cases = caseMasteryGrid(CONCEPTS, progress)
+  const weak = weakestCase(cases)
+
+  return {
+    game,
+    state,
+    days,
+    goal: goalProgress(today),
+    cases,
+    weakest: weak && {
+      conceptId: weak.conceptId,
+      case: weak.case,
+      number: weak.number,
+      titleDe: CONCEPTS.find(c => c.id === weak.conceptId)?.titleDe ?? '',
+    },
+    forecast: reviewForecast(progress, cards, now),
+    week: weekCompare(days, now),
+    quests,
+    // Both trainers feed the shelf: the day rows are shared, and "1000 Wörter
+    // im Training" is not a grammar achievement or a vocabulary one.
+    shelf: shelf(
+      {
+        // max(): a streak the freeze forgiveness extended is real, and a
+        // derived run of calendar days cannot see it.
+        bestStreak: Math.max(game.streak, longestStreak(days)),
+        items: days.reduce((n, d) => n + d.items, 0),
+        conceptsMastered: progress.filter(p => p.mastery >= 0.85 && p.intervalDays >= 21).length,
+        words: cards.length,
+        minutes: Math.round(days.reduce((n, d) => n + d.seconds, 0) / 60),
+      },
+      game.achievements,
+    ),
+    concepts: CONCEPTS.map(c => {
+      const p = byId.get(c.id)
+      return {
+        id: c.id,
+        titleDe: c.titleDe,
+        tier: c.tier,
+        group: c.group,
+        authored: AUTHORED_CONCEPTS.has(c.id),
+        mastery: p?.mastery ?? 0,
+        intervalDays: p?.intervalDays ?? 0,
+        due: p?.due ?? 0,
+        seen: p?.seen ?? 0,
+        lapses: p?.lapses ?? 0,
+      }
+    }),
+  }
+}
