@@ -8,7 +8,17 @@ name: Sign & release
 on:
   push:
     tags: ['v*']
+  # Dispatch can also cut a release, given the tag to cut. This exists because
+  # not every environment that can push a branch can push a tag — a scoped
+  # credential often allows refs/heads and refuses refs/tags — and without it
+  # the only way to release is from a machine with full tag rights.
+  # softprops/action-gh-release creates the tag if it does not exist yet.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release, e.g. v0.5.0. Created if it does not exist. Leave empty to release the current ref.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -40,5 +50,8 @@ jobs:
       - name: Attach .xpi to the release
         uses: softprops/action-gh-release@v2
         with:
+          # On a tag push github.ref_name IS the tag, so the fallback keeps the
+          # original trigger behaving exactly as before.
+          tag_name: ${{ inputs.tag || github.ref_name }}
           files: web-ext-artifacts/*.xpi
           fail_on_unmatched_files: true
