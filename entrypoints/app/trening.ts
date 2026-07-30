@@ -79,7 +79,7 @@ export async function renderTrening(): Promise<void> {
   }
   showScreen('home')
 
-  const { game, concepts, days, goal, cases, weakest, forecast, week, quests } = view
+  const { game, concepts, days, goal, cases, weakest, forecast, week, quests, shelf } = view
   const rank = rankFor(game.xp)
   const upcoming = nextRank(game.xp)
 
@@ -141,6 +141,7 @@ export async function renderTrening(): Promise<void> {
   renderCases(cases, weakest)
   renderForecast(forecast)
   renderWeek(week)
+  renderShelf(shelf)
 
   $('tr-map').innerHTML = renderMap(concepts)
   $('tr-activity').innerHTML = renderActivity(days)
@@ -176,6 +177,39 @@ function renderQuests(quests: any[]): void {
       <div class="tr-quest-desc">${esc(q.descDe)}</div>
       <div class="tr-quest-track"><div class="tr-quest-fill" style="width:${Math.round(q.fraction * 100)}%"></div></div>
     </div>`).join('')
+}
+
+/**
+ * The badge shelf.
+ *
+ * Unearned badges are shown greyed rather than hidden: a shelf with gaps in it
+ * is a ladder, and a shelf showing only what you already have is a receipt.
+ */
+function renderShelf(shelf: any): void {
+  if (!shelf) return
+  $('tr-shelf-note').textContent = `${shelf.earned}/${shelf.total}`
+
+  const tiered = (shelf.tiered ?? []).map((b: any) => `
+    <div class="tr-badge${b.earned ? ' tr-badge-on' : ''}"
+         title="${esc(b.labelDe)}: ${b.value}${b.nextAt ? ` · nächste Stufe bei ${b.nextAt}` : ' · vollständig'}">
+      <div class="tr-badge-mark">${icon(b.icon as any, 20)}
+        <span class="tr-badge-tier">${b.tier}/${b.tiers}</span>
+      </div>
+      <div class="tr-badge-title">${esc(b.titleDe)}</div>
+      <div class="tr-badge-sub">${b.nextAt
+        ? `${b.value} / ${b.nextAt}`
+        : `${b.value} — komplett`}</div>
+      <div class="tr-badge-track"><div style="width:${Math.round(b.fraction * 100)}%"></div></div>
+    </div>`).join('')
+
+  const moments = (shelf.moments ?? []).map((m: any) => `
+    <div class="tr-badge tr-badge-moment${m.earned ? ' tr-badge-on' : ''}" title="${esc(m.descDe)}">
+      <div class="tr-badge-mark">${icon(m.earned ? 'medal' : 'lock', 20)}</div>
+      <div class="tr-badge-title">${esc(m.titleDe)}</div>
+      <div class="tr-badge-sub">${esc(m.descDe)}</div>
+    </div>`).join('')
+
+  $('tr-shelf').innerHTML = `<div class="tr-shelf">${tiered}${moments}</div>`
 }
 
 const CASE_SHORT: Record<string, string> = {

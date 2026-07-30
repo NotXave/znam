@@ -1049,6 +1049,43 @@ button svg { vertical-align: -0.15em; }
 .tr-week-bar > div { height: 100%; border-radius: var(--r-full); }
 .tr-week-ahead { color: var(--accent-ink); font-weight: 600; }
 
+/* Badge shelf */
+.tr-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: var(--s-2);
+}
+.tr-badge {
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: var(--s-3); display: flex; flex-direction: column; gap: 2px;
+  /* Unearned badges are dimmed, not hidden — a shelf with gaps is a ladder. */
+  opacity: 0.5;
+}
+.tr-badge-on { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+.tr-badge-mark {
+  display: flex; align-items: center; justify-content: space-between;
+  color: var(--muted); margin-bottom: var(--s-1);
+}
+.tr-badge-on .tr-badge-mark { color: var(--accent); }
+.tr-badge-tier {
+  font-size: var(--t-xs); font-variant-numeric: tabular-nums;
+  color: var(--muted); letter-spacing: 0.04em;
+}
+.tr-badge-title { font: 600 var(--t-lg)/1.2 var(--font-display); }
+.tr-badge-sub { color: var(--muted); font-size: var(--t-xs); }
+.tr-badge-track {
+  height: 3px; background: var(--track-solid); border-radius: var(--r-full);
+  overflow: hidden; margin-top: var(--s-2);
+}
+.tr-badge-track > div {
+  height: 100%; background: var(--accent); border-radius: var(--r-full);
+  transition: width 0.4s ease-out;
+}
+/* A moment either happened or it did not, so there is no bar to show. */
+.tr-badge-moment .tr-badge-sub {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
 /* Session diff on the summary */
 .tr-diff { text-align: left; margin-top: var(--s-3); }
 .tr-diff-group { margin-bottom: var(--s-3); }
@@ -1066,7 +1103,7 @@ button svg { vertical-align: -0.15em; }
 .tr-diff-down .tr-diff-when { color: var(--bad); }
 
 @media (prefers-reduced-motion: reduce) {
-  .tr-goal-fill, .tr-quest-fill { transition: none; }
+  .tr-goal-fill, .tr-quest-fill, .tr-badge-track > div { transition: none; }
 }
 
 /* ── Icons ───────────────────────────────────────────────────

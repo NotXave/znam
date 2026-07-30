@@ -351,6 +351,41 @@ export function weekTotals(days: SessionDay[]): WeekTotals[] {
   return [...byWeek.values()].sort((a, b) => a.key.localeCompare(b.key))
 }
 
+/**
+ * The longest run of consecutive active days in the record.
+ *
+ * Derived rather than stored: GameState only ever kept the CURRENT streak, and
+ * adding a `bestStreak` field would need a migration and would still be wrong
+ * for everyone's existing history. Reading it off the day rows is right
+ * retroactively.
+ *
+ * A day with no items and no time is not active, so a row written by a session
+ * that was quit immediately does not bridge a gap.
+ */
+export function longestStreak(days: Pick<SessionDay, 'date' | 'items' | 'seconds'>[]): number {
+  const active = days
+    .filter(d => d.items > 0 || d.seconds > 0)
+    .map(d => d.date)
+    .sort()
+  let best = 0
+  let run = 0
+  let prev: string | undefined
+  for (const date of active) {
+    if (date === prev) continue // two sessions, one day
+    run = prev && daysApart(prev, date) === 1 ? run + 1 : 1
+    best = Math.max(best, run)
+    prev = date
+  }
+  return best
+}
+
+/** Whole days between two YYYY-MM-DD dates. */
+function daysApart(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00Z`)
+  const b = Date.parse(`${to}T00:00:00Z`)
+  return Math.round((b - a) / DAY_MS)
+}
+
 export interface WeekCompare {
   current: WeekTotals
   /** The best previous week by XP, or undefined in the first week. */

@@ -24,12 +24,14 @@ import { recordSession, questsView } from './quests-bg'
 import {
   caseMasteryGrid,
   goalProgress,
+  longestStreak,
   reviewForecast,
   sessionDiff,
   weakestCase,
   weekCompare,
   type SessionDiff,
 } from './grammar/stats'
+import { shelf } from './grammar/badges'
 
 /**
  * Background-side glue for the grammar game: it owns IndexedDB and the game
@@ -313,6 +315,8 @@ export interface GrammarProgressView {
   /** This week against your own best week. */
   week: ReturnType<typeof weekCompare>
   quests: Awaited<ReturnType<typeof questsView>>
+  /** Tiered badges plus the one-off achievements, with progress. */
+  shelf: ReturnType<typeof shelf>
 }
 
 export async function grammarProgress(lang: string): Promise<GrammarProgressView> {
@@ -348,6 +352,20 @@ export async function grammarProgress(lang: string): Promise<GrammarProgressView
     forecast: reviewForecast(progress, cards, now),
     week: weekCompare(days, now),
     quests,
+    // Both trainers feed the shelf: the day rows are shared, and "1000 Wörter
+    // im Training" is not a grammar achievement or a vocabulary one.
+    shelf: shelf(
+      {
+        // max(): a streak the freeze forgiveness extended is real, and a
+        // derived run of calendar days cannot see it.
+        bestStreak: Math.max(game.streak, longestStreak(days)),
+        items: days.reduce((n, d) => n + d.items, 0),
+        conceptsMastered: progress.filter(p => p.mastery >= 0.85 && p.intervalDays >= 21).length,
+        words: cards.length,
+        minutes: Math.round(days.reduce((n, d) => n + d.seconds, 0) / 60),
+      },
+      game.achievements,
+    ),
     concepts: CONCEPTS.map(c => {
       const p = byId.get(c.id)
       return {
