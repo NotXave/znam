@@ -79,7 +79,7 @@ export async function renderTrening(): Promise<void> {
   }
   showScreen('home')
 
-  const { game, concepts, days } = view
+  const { game, concepts, days, goal, cases, weakest, forecast, week, quests } = view
   const rank = rankFor(game.xp)
   const upcoming = nextRank(game.xp)
 
@@ -125,7 +125,8 @@ export async function renderTrening(): Promise<void> {
   // Both modes carry their own streak; the home screen shows them together so
   // the split reads as two doors into one habit rather than two separate chores.
   const vocab = await send({ type: 'VOCAB_PROGRESS', payload: { lang } })
-  const streakChip = (n: number) => (n > 0 ? `${icon('flame', 12)} ${n} Tage` : '')
+  const streakChip = (n: number) =>
+    n > 0 ? `${icon('flame', 12)} ${n} ${n === 1 ? 'Tag' : 'Tage'}` : ''
   $('tr-streak-grammar').innerHTML = streakChip(game.streak)
   $('tr-streak-vocab').innerHTML = streakChip(vocab?.streak ?? 0)
 
@@ -135,8 +136,140 @@ export async function renderTrening(): Promise<void> {
   perfect.className = bothToday ? 'tr-perfect' : 'hint'
   if (bothToday) perfect.innerHTML = `${icon('spark', 14)} Perfekter Tag — beides erledigt.`
 
+  renderGoal(goal)
+  renderQuests(quests)
+  renderCases(cases, weakest)
+  renderForecast(forecast)
+  renderWeek(week)
+
   $('tr-map').innerHTML = renderMap(concepts)
   $('tr-activity').innerHTML = renderActivity(days)
+}
+
+// ── depth: the home screen tells you what to do today ───────
+
+/** 2πr for the r=19 ring in index.html. Must match the CSS dasharray. */
+const RING = 2 * Math.PI * 19
+
+function renderGoal(goal: any): void {
+  if (!goal) return
+  const fill = document.getElementById('tr-goal-fill') as SVGCircleElement | null
+  if (fill) fill.style.strokeDashoffset = String(RING * (1 - (goal.fraction ?? 0)))
+  $('tr-goal-num').textContent = `${Math.round((goal.fraction ?? 0) * 100)}%`
+  $('tr-goal').classList.toggle('tr-goal-met', !!goal.met)
+  $('tr-goal').title = goal.labelDe ?? ''
+}
+
+function renderQuests(quests: any[]): void {
+  const card = $('tr-quests-card')
+  if (!quests || quests.length === 0) {
+    card.hidden = true
+    return
+  }
+  card.hidden = false
+  const done = quests.filter(q => q.done).length
+  $('tr-quests-note').textContent = `${done}/${quests.length} erledigt`
+  $('tr-quests').innerHTML = quests.map(q => `
+    <div class="tr-quest${q.done ? ' tr-quest-done' : ''}">
+      <div class="tr-quest-title">${q.done ? icon('check', 14) : icon('target', 14)}${esc(q.titleDe)}</div>
+      <div class="tr-quest-count">${q.progress}/${q.target}${q.done ? '' : ` · +${q.xp} XP`}</div>
+      <div class="tr-quest-desc">${esc(q.descDe)}</div>
+      <div class="tr-quest-track"><div class="tr-quest-fill" style="width:${Math.round(q.fraction * 100)}%"></div></div>
+    </div>`).join('')
+}
+
+const CASE_SHORT: Record<string, string> = {
+  nom: 'Nom', gen: 'Gen', dat: 'Dat', acc: 'Akk', ins: 'Inst', loc: 'Lok', voc: 'Vok',
+}
+const CASE_FULL: Record<string, string> = {
+  nom: 'Nominativ', gen: 'Genitiv', dat: 'Dativ', acc: 'Akkusativ',
+  ins: 'Instrumental', loc: 'Lokativ', voc: 'Vokativ',
+}
+
+function renderCases(cases: any[], weakest: any): void {
+  if (!cases) return
+  const rows = [...new Set(cases.map(c => c.case))]
+  const cell = (c: any) => {
+    if (c.state === 'absent') {
+      return '<div class="tr-case-cell tr-case-absent" title="Gleich dem Nominativ Plural">—</div>'
+    }
+    const weak = weakest?.conceptId && c.conceptId === weakest.conceptId
+    const pct = Math.round(c.mastery * 100)
+    const label = `${CASE_FULL[c.case]} ${c.number === 'sg' ? 'Singular' : 'Plural'}`
+    return `<div class="tr-case-cell tr-case-${c.state}${weak ? ' tr-case-weak' : ''}"
+      title="${esc(label)} — ${c.seen === 0 ? 'noch nicht geübt' : `${pct}% · ${c.seen}×`}">${
+      c.seen === 0 ? '' : `${pct}%`}</div>`
+  }
+  $('tr-cases').innerHTML =
+    '<div class="tr-case-grid">' +
+    '<div></div><div class="tr-case-head">Singular</div><div class="tr-case-head">Plural</div>' +
+    rows.map((r) => {
+      const sg = cases.find(c => c.case === r && c.number === 'sg')
+      const pl = cases.find(c => c.case === r && c.number === 'pl')
+      return `<div class="tr-case-label" title="${esc(CASE_FULL[r])}">${CASE_SHORT[r]}</div>${cell(sg)}${cell(pl)}`
+    }).join('') +
+    '</div>'
+
+  $('tr-cases-note').textContent = weakest?.titleDe
+    ? `am wackeligsten: ${CASE_FULL[weakest.case]} ${weakest.number === 'sg' ? 'Sg.' : 'Pl.'}`
+    : 'noch nichts geübt'
+}
+
+function renderForecast(forecast: any[]): void {
+  if (!forecast || forecast.length === 0) return
+  const max = Math.max(1, ...forecast.map(d => d.concepts + d.cards))
+  const total = forecast.reduce((n, d) => n + d.concepts + d.cards, 0)
+  if (total === 0) {
+    $('tr-forecast').innerHTML =
+      '<div class="tr-fc-empty">Noch nichts eingeplant — das füllt sich mit den ersten Einheiten.</div>'
+    return
+  }
+  const h = (n: number) => `${(n / max) * 100}%`
+  $('tr-forecast').innerHTML =
+    '<div class="tr-forecast">' +
+    forecast.map(d => `
+      <div class="tr-fc-day${d.today ? ' tr-fc-today' : ''}"
+           title="${d.date}: ${d.concepts} Themen, ${d.cards} Karten">
+        <div class="tr-fc-bar tr-fc-cards" style="height:${h(d.cards)}"></div>
+        <div class="tr-fc-bar tr-fc-concepts" style="height:${h(d.concepts)}"></div>
+      </div>`).join('') +
+    '</div>' +
+    `<div class="tr-fc-axis"><span>heute</span><span>in 14 Tagen</span></div>` +
+    `<div class="hint" style="margin-top:6px">${total} Wiederholungen insgesamt · ` +
+    `<span style="color:var(--accent)">■</span> Themen · ` +
+    `<span style="color:var(--n-4)">■</span> Vokabeln</div>`
+}
+
+function renderWeek(week: any): void {
+  if (!week) return
+  const { current, best, ahead, toBeat } = week
+  if (!best) {
+    $('tr-week').innerHTML =
+      '<div class="hint">Deine erste Woche läuft. Ab nächster Woche gibt es etwas zu schlagen — ' +
+      'nämlich dich selbst.</div>' +
+      row('Diese Woche', current, 1)
+    return
+  }
+  const max = Math.max(1, current.xp, best.xp)
+  $('tr-week').innerHTML =
+    row('Diese Woche', current, current.xp / max, 'var(--accent)') +
+    row('Deine beste', best, best.xp / max, 'var(--n-4)') +
+    `<div class="hint" style="margin-top:8px">${
+      ahead
+        ? `<span class="tr-week-ahead">Bestwoche geschlagen.</span> Weiter so.`
+        : `Noch ${toBeat} XP bis zu deiner besten Woche (${esc(best.key)}).`
+    }</div>`
+
+  function row(label: string, w: any, frac: number, color = 'var(--accent)'): string {
+    return `<div class="tr-week-row">
+      <div>
+        <div class="hint" style="margin:0">${esc(label)}</div>
+        <div class="tr-week-num">${w.xp} XP</div>
+      </div>
+      <div class="hint" style="margin:0;text-align:right">${w.items} Aufgaben · ${w.minutes} Min · ${w.activeDays} ${w.activeDays === 1 ? 'Tag' : 'Tage'}</div>
+    </div>
+    <div class="tr-week-bar"><div style="width:${Math.round(Math.max(2, frac * 100))}%;background:${color}"></div></div>`
+  }
 }
 
 function tile(num: string, label: string): string {
@@ -568,19 +701,51 @@ function renderSummary(summary: any, counted: boolean, seconds: number): void {
     const a = ACHIEVEMENTS.find(x => x.id === id)
     if (a) notes.push(`<div class="tr-achievement">${icon('medal', 16)}<span><b>${esc(a.titleDe)}</b> — ${esc(a.descDe)}</span></div>`)
   }
+
+  // Finished quests go with the achievements — they are the same kind of news.
+  for (const q of summary?.questsCompleted ?? []) {
+    notes.push(
+      `<div class="tr-achievement">${icon('target', 16)}<span>` +
+      `<b>${esc(q.titleDe)}</b> — Wochenziel erledigt. +${q.xp} XP</span></div>`,
+    )
+  }
   $('tr-summary-achievements').innerHTML = notes.join('')
 
-  const advanced: any[] = summary?.conceptsAdvanced ?? []
-  $('tr-summary-concepts').innerHTML = advanced.length
-    ? `<h2 style="margin-top:14px">Nächste Wiederholung</h2>` +
-      advanced
-        .map(
-          c =>
-            `<div class="tr-advance"><span>${esc(titleOf(c.conceptId))}</span>` +
-            `<span class="hint">in ${c.intervalDays} ${c.intervalDays === 1 ? 'Tag' : 'Tagen'} · ${Math.round(c.mastery * 100)}%</span></div>`,
-        )
-        .join('')
-    : ''
+  $('tr-summary-concepts').innerHTML = renderDiff(summary?.diff)
+}
+
+/**
+ * What the session changed, rather than how it went.
+ *
+ * Intervals are the honest currency here: "Genitiv Plural — in 8 statt 3 Tagen"
+ * says the scheduler now trusts you with it, which is the actual outcome of a
+ * session. The old summary listed every touched concept under "Nächste
+ * Wiederholung" whether it had advanced or not.
+ */
+function renderDiff(diff: any): string {
+  if (!diff) return ''
+  const days = (n: number) => `${n} ${n === 1 ? 'Tag' : 'Tagen'}`
+  const group = (label: string, rows: string[], cls = '') =>
+    rows.length === 0 ? '' :
+      `<div class="tr-diff-group ${cls}"><div class="tr-diff-label">${esc(label)}</div>${rows.join('')}</div>`
+
+  const advanced = (diff.advanced ?? []).slice(0, 6).map((c: any) =>
+    `<div class="tr-diff-row tr-diff-up"><span>${esc(titleOf(c.conceptId))}</span>` +
+    `<span class="tr-diff-when">in ${days(c.toDays)} statt ${c.fromDays}</span></div>`)
+  const slipped = (diff.slipped ?? []).slice(0, 4).map((c: any) =>
+    `<div class="tr-diff-row tr-diff-down"><span>${esc(titleOf(c.conceptId))}</span>` +
+    `<span class="tr-diff-when">schon in ${days(c.toDays)}</span></div>`)
+  const introduced = (diff.introduced ?? []).map((id: string) =>
+    `<div class="tr-diff-row"><span>${esc(titleOf(id))}</span>` +
+    `<span class="tr-diff-when">neu</span></div>`)
+
+  const body =
+    group('Zum ersten Mal', introduced) +
+    group('Sitzt besser — kommt später zurück', advanced) +
+    group('Kommt früher zurück', slipped)
+
+  if (!body) return ''
+  return `<div class="tr-diff"><h2 style="margin-top:14px">Was sich geändert hat</h2>${body}</div>`
 }
 
 function titleOf(conceptId: string): string {

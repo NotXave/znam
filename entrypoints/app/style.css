@@ -929,6 +929,146 @@ button svg { vertical-align: -0.15em; }
   .tr-boss-hp > div { transition: none; }
 }
 
+/* ── Depth: goal ring, quests, case grid, forecast, week ─────
+   Everything here renders data the game already had and never showed. The
+   visual language is the same one the rest of the app uses — hairlines, one
+   accent, the display face for numbers — so these read as more of the same
+   product rather than as a bolted-on dashboard. */
+
+.tr-card-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: var(--s-3);
+}
+.tr-card-head h2 { margin: 0; display: flex; align-items: center; gap: var(--s-2); }
+.tr-card-head h2 svg { color: var(--accent); }
+
+.tr-two-up { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+@media (max-width: 620px) { .tr-two-up { grid-template-columns: 1fr; } }
+
+/* Goal ring. An SVG circle with a dash offset — no library, and it animates
+   for free because stroke-dashoffset is a transitionable property. */
+.tr-goal { position: relative; flex: none; line-height: 0; }
+.tr-goal-track { fill: none; stroke: var(--track-solid); stroke-width: 3; }
+.tr-goal-fill {
+  fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round;
+  /* 2πr for r=19, set once so the JS only has to move the offset. */
+  stroke-dasharray: 119.38;
+  stroke-dashoffset: 119.38;
+  transition: stroke-dashoffset 0.6s ease-out;
+}
+.tr-goal-num {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--t-xs); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.tr-goal-met .tr-goal-num { color: var(--accent-ink); }
+
+/* Quests */
+.tr-quest {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s-3);
+  padding: var(--s-2) 0; border-bottom: 1px solid var(--line);
+}
+.tr-quest:last-child { border-bottom: 0; }
+/* Every child is placed explicitly. Leaving the count to auto-placement put it
+   in column 1 and pushed the title to column 2, which read as right-aligned. */
+.tr-quest-title {
+  grid-area: 1 / 1; font-weight: 600;
+  display: flex; align-items: center; gap: var(--s-2);
+}
+.tr-quest-title svg { color: var(--accent); flex: none; }
+.tr-quest-desc { grid-area: 2 / 1; color: var(--muted); font-size: var(--t-sm); }
+.tr-quest-count {
+  grid-area: 1 / 2 / span 2 / 3; align-self: center; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--muted); font-size: var(--t-sm);
+  white-space: nowrap;
+}
+.tr-quest-track {
+  grid-area: 3 / 1 / 4 / -1; height: 3px; background: var(--track-solid);
+  border-radius: var(--r-full); overflow: hidden; margin-top: var(--s-1);
+}
+.tr-quest-fill {
+  height: 100%; background: var(--accent); border-radius: var(--r-full);
+  transition: width 0.4s ease-out;
+}
+.tr-quest-done .tr-quest-title { color: var(--accent-ink); }
+.tr-quest-done .tr-quest-count { color: var(--accent-ink); font-weight: 600; }
+
+/* Case grid: 7 rows × 2 columns, the way a textbook lays the language out. */
+/* Capped rather than stretched: a full-width cell reads as an empty input
+   field, which is exactly what a never-practised cell looked like. */
+.tr-case-grid {
+  display: grid;
+  grid-template-columns: auto minmax(64px, 110px) minmax(64px, 110px);
+  gap: 3px var(--s-2);
+  align-items: center;
+  justify-content: start;
+}
+.tr-case-head {
+  font-size: var(--t-xs); color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.tr-case-label { font-size: var(--t-sm); color: var(--ink-2); white-space: nowrap; }
+.tr-case-cell {
+  height: 22px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--heat-0);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums;
+}
+/* The four states are the heat ramp, so the grid and the activity heatmap
+   belong to the same visual family. */
+/* Never practised: a hairline outline with nothing in it, so the grid reads as
+   "not yet" rather than as a form to fill in. */
+.tr-case-new { background: none; }
+.tr-case-shaky { background: var(--heat-1); }
+.tr-case-learning { background: var(--heat-2); }
+.tr-case-solid { background: var(--heat-4); color: var(--on-accent); border-color: var(--heat-4); }
+.tr-case-absent { background: none; border-style: dashed; opacity: 0.5; }
+.tr-case-weak { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+/* Review forecast: an inline bar chart, same idiom as the daily chart. */
+.tr-forecast { display: flex; align-items: flex-end; gap: 2px; height: 72px; }
+.tr-fc-day { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 1px; height: 100%; }
+.tr-fc-bar { border-radius: 2px 2px 0 0; min-height: 0; }
+.tr-fc-concepts { background: var(--accent); }
+.tr-fc-cards { background: var(--n-4); }
+.tr-fc-today .tr-fc-bar { outline: 1px solid var(--accent); outline-offset: 1px; }
+.tr-fc-axis {
+  display: flex; justify-content: space-between;
+  color: var(--muted); font-size: var(--t-xs); margin-top: var(--s-1);
+}
+.tr-fc-empty { color: var(--muted); font-size: var(--t-sm); }
+
+/* This week vs your own best */
+.tr-week-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--line);
+}
+.tr-week-row:last-child { border-bottom: 0; }
+.tr-week-num { font: 600 var(--t-xl)/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.tr-week-bar { height: 4px; background: var(--track-solid); border-radius: var(--r-full); overflow: hidden; margin-top: var(--s-1); }
+.tr-week-bar > div { height: 100%; border-radius: var(--r-full); }
+.tr-week-ahead { color: var(--accent-ink); font-weight: 600; }
+
+/* Session diff on the summary */
+.tr-diff { text-align: left; margin-top: var(--s-3); }
+.tr-diff-group { margin-bottom: var(--s-3); }
+.tr-diff-label {
+  font-size: var(--t-xs); color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--s-1);
+}
+.tr-diff-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); padding: 5px 0; border-bottom: 1px solid var(--line); font-size: var(--t-md);
+}
+.tr-diff-row:last-child { border-bottom: 0; }
+.tr-diff-when { color: var(--muted); font-size: var(--t-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tr-diff-up .tr-diff-when { color: var(--ok); }
+.tr-diff-down .tr-diff-when { color: var(--bad); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tr-goal-fill, .tr-quest-fill { transition: none; }
+}
+
 /* ── Icons ───────────────────────────────────────────────────
    entrypoints/app/icons.ts renders these. Nothing here sets a colour: an icon
    inherits `currentColor` from the text beside it, which is what keeps a set

@@ -5,6 +5,7 @@ import {
   getAllWords,
   getFreqRanks,
   getSessionDays,
+  getVocabCards,
   putConceptProgress,
   putDrillRows,
   putSessionDay,
@@ -18,6 +19,17 @@ import { CONCEPTS } from './grammar/curriculum'
 import { AUTHORED_CONCEPTS } from './grammar/lessons.de'
 import { dayKey } from './grammar/session'
 import type { VocabRank } from './grammar/generator'
+import { grammarContribution } from './grammar/quests'
+import { recordSession, questsView } from './quests-bg'
+import {
+  caseMasteryGrid,
+  goalProgress,
+  reviewForecast,
+  sessionDiff,
+  weakestCase,
+  weekCompare,
+  type SessionDiff,
+} from './grammar/stats'
 
 /**
  * Background-side glue for the grammar game: it owns IndexedDB and the game
@@ -183,6 +195,11 @@ export interface SessionSummary {
   correct: number
   total: number
   conceptsAdvanced: { conceptId: string; mastery: number; intervalDays: number }[]
+  /** What actually changed — see grammar/stats.ts. */
+  diff: SessionDiff
+  /** Weekly quests finished by this session, and the bonus they paid. */
+  questsCompleted: { titleDe: string; xp: number }[]
+  questXp: number
 }
 
 export async function endGrammarSession(
@@ -197,6 +214,8 @@ export async function endGrammarSession(
   const existing = await getAllConceptProgress(lang)
   const updated: ConceptProgress[] = applySession(existing, attempts, lang, now)
   await putConceptProgress(updated)
+  // Computed from the BEFORE snapshot, which only exists here.
+  const diff = sessionDiff(existing, updated)
 
   // ── attempt log ──
   const drills: DrillRow[] = attempts.map(a => ({
@@ -225,6 +244,15 @@ export async function endGrammarSession(
   }
   await saveGameState(game)
 
+  // ── weekly quests ──
+  // After the game state is saved, so a quest that depends on today counting as
+  // a Trening day sees it. Quest XP is added on top by recordSession.
+  const quests = await recordSession(
+    lang, 'grammar',
+    grammarContribution(attempts, xp.maxCombo, diff.introduced.length),
+    today, now,
+  )
+
   // ── daily record (streak + heatmap) ──
   const days = await getSessionDays(lang)
   const prior = days.find(d => d.date === today)
@@ -238,8 +266,8 @@ export async function endGrammarSession(
   })
 
   return {
-    xp: xp.total,
-    xpTotal: game.xp,
+    xp: xp.total + quests.xp,
+    xpTotal: game.xp + quests.xp,
     streak: game.streak,
     freezeUsed: streakUpdate.freezeUsed,
     streakBroken: streakUpdate.broken,
@@ -248,11 +276,14 @@ export async function endGrammarSession(
     rankId: rankFor(game.xp).id,
     correct,
     total: attempts.length,
-    conceptsAdvanced: updated.map(u => ({
+    conceptsAdvanced: diff.advanced.map(u => ({
       conceptId: u.conceptId,
       mastery: u.mastery,
-      intervalDays: u.intervalDays,
+      intervalDays: u.toDays,
     })),
+    diff,
+    questsCompleted: quests.completed.map(q => ({ titleDe: q.titleDe, xp: q.xp })),
+    questXp: quests.xp,
   }
 }
 
@@ -272,21 +303,51 @@ export interface GrammarProgressView {
   }[]
   days: { date: string; seconds: number; items: number; correct: number; xp: number }[]
   state: GrammarState
+  /** Progress toward today's goal — the ring that replaced the countdown. */
+  goal: ReturnType<typeof goalProgress>
+  /** The 7 × 2 case-by-number heat grid, plus the softest corner. */
+  cases: ReturnType<typeof caseMasteryGrid>
+  weakest?: { conceptId?: string; case: string; number: string; titleDe: string }
+  /** How much comes back due over the next fortnight. */
+  forecast: ReturnType<typeof reviewForecast>
+  /** This week against your own best week. */
+  week: ReturnType<typeof weekCompare>
+  quests: Awaited<ReturnType<typeof questsView>>
 }
 
 export async function grammarProgress(lang: string): Promise<GrammarProgressView> {
-  const [game, progress, days, state] = await Promise.all([
+  const now = Date.now()
+  const [game, progress, days, state, cards, quests] = await Promise.all([
     getGameState(lang),
     getAllConceptProgress(lang),
     getSessionDays(lang),
     grammarState(lang),
+    getVocabCards(lang).catch(() => []),
+    questsView(lang, now),
   ])
   const byId = new Map(progress.map(p => [p.conceptId, p]))
+
+  // The goal ring counts BOTH trainers: the day's record is shared, which is the
+  // point — fifteen minutes of Polish is fifteen minutes of Polish.
+  const today = days.find(d => d.date === dayKey(now))
+  const cases = caseMasteryGrid(CONCEPTS, progress)
+  const weak = weakestCase(cases)
 
   return {
     game,
     state,
     days,
+    goal: goalProgress(today),
+    cases,
+    weakest: weak && {
+      conceptId: weak.conceptId,
+      case: weak.case,
+      number: weak.number,
+      titleDe: CONCEPTS.find(c => c.id === weak.conceptId)?.titleDe ?? '',
+    },
+    forecast: reviewForecast(progress, cards, now),
+    week: weekCompare(days, now),
+    quests,
     concepts: CONCEPTS.map(c => {
       const p = byId.get(c.id)
       return {

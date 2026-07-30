@@ -31,6 +31,9 @@ import {
   type VocabExercise,
 } from './grammar/vocab'
 import type { WordRecord } from './types'
+import { LEECH_LAPSES } from './grammar/vocab'
+import { vocabContribution } from './grammar/quests'
+import { recordSession } from './quests-bg'
 
 /**
  * Background side of the Słówka vocabulary trainer.
@@ -51,7 +54,18 @@ export interface VocabPlan {
 export interface VocabResult {
   date: string
   seconds: number
-  attempts: { lemma: string; correct: boolean; nearMiss: boolean; ms: number }[]
+  /**
+   * `kind` is carried per attempt because "recognize" and "produce" are not the
+   * same achievement — picking a gloss from four options is much easier than
+   * typing the Polish, and the weekly quests reward the harder one.
+   */
+  attempts: {
+    lemma: string
+    correct: boolean
+    nearMiss: boolean
+    ms: number
+    kind?: string
+  }[]
   maxCombo: number
 }
 
@@ -234,6 +248,12 @@ export interface VocabSummary {
   maxCombo: number
   perfectDay: boolean
   dueTomorrow: number
+  /** Weekly quests finished by this session. */
+  questsCompleted: { titleDe: string; xp: number }[]
+  questXp: number
+  /** Cards that graduated to a longer interval, and ones that came back closer. */
+  graduated: number
+  lapsed: number
 }
 
 export async function endVocabSession(
@@ -244,7 +264,13 @@ export async function endVocabSession(
   const today = dayKey(now)
 
   // ── SRS, one card per word ──
-  const existing = new Map((await getVocabCards(lang)).map(c => [c.lemma, c]))
+  const priorCards = await getVocabCards(lang)
+  const existing = new Map(priorCards.map(c => [c.lemma, c]))
+  // Captured BEFORE the review, because a card stops being a leech the moment
+  // it is answered right — reading the set afterwards would credit nothing.
+  const leechesBefore = new Set(
+    priorCards.filter(c => c.lapses >= LEECH_LAPSES).map(c => c.lemma),
+  )
   const byLemma = new Map<string, { n: number; ok: number }>()
   for (const a of result.attempts) {
     const t = byLemma.get(a.lemma) ?? { n: 0, ok: 0 }
@@ -276,6 +302,17 @@ export async function endVocabSession(
     })
   }
   await putVocabCards(updated)
+
+  // What changed, for the summary: the vocabulary equivalent of the grammar
+  // session diff.
+  let graduated = 0
+  let lapsed = 0
+  for (const card of updated) {
+    const was = existing.get(card.lemma)
+    if (!was) continue
+    if (card.intervalDays > was.intervalDays) graduated++
+    else if (card.intervalDays < was.intervalDays) lapsed++
+  }
 
   // ── XP and its own streak ──
   const correct = result.attempts.filter(a => a.correct).length
@@ -311,15 +348,28 @@ export async function endVocabSession(
 
   const dueTomorrow = updated.filter(c => c.due <= now + 86_400_000).length
 
+  // ── weekly quests ──
+  // After the game state is saved, so `bothModes` can see that today counts as
+  // a Słówka day.
+  const quests = await recordSession(
+    lang, 'vocab',
+    vocabContribution(result.attempts, result.maxCombo, leechesBefore),
+    today, now,
+  )
+
   return {
-    xp: xp.total + (perfectDay ? 50 : 0),
-    xpTotal: game.xp,
+    xp: xp.total + (perfectDay ? 50 : 0) + quests.xp,
+    xpTotal: game.xp + quests.xp,
     streak: game.streak,
     correct,
     total: result.attempts.length,
     maxCombo: xp.maxCombo,
     perfectDay,
     dueTomorrow,
+    questsCompleted: quests.completed.map(q => ({ titleDe: q.titleDe, xp: q.xp })),
+    questXp: quests.xp,
+    graduated,
+    lapsed,
   }
 }
 

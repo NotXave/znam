@@ -116,6 +116,15 @@
                 <i data-icon="flame" data-size="15"></i>
                 <span class="tr-streak-n">0</span>
               </div>
+              <!-- A number you fill, rather than one running out. -->
+              <div class="tr-goal" id="tr-goal" title="Tagesziel">
+                <svg viewBox="0 0 44 44" width="52" height="52" aria-hidden="true">
+                  <circle class="tr-goal-track" cx="22" cy="22" r="19" />
+                  <circle class="tr-goal-fill" id="tr-goal-fill" cx="22" cy="22" r="19"
+                          transform="rotate(-90 22 22)" />
+                </svg>
+                <span class="tr-goal-num" id="tr-goal-num">0%</span>
+              </div>
             </div>
             <div class="tr-rank">
               <div class="tr-rank-row">
@@ -143,6 +152,36 @@
           </div>
 
           <div id="tr-tiles" class="stat-tiles"></div>
+
+          <!-- Weekly quests: three, generated from your own state, rerolled Monday. -->
+          <div class="card" id="tr-quests-card" hidden>
+            <div class="tr-card-head">
+              <h2><i data-icon="target" data-size="16"></i> Diese Woche</h2>
+              <span class="hint" id="tr-quests-note"></span>
+            </div>
+            <div id="tr-quests"></div>
+          </div>
+
+          <!-- The grid Polish learners actually think in. -->
+          <div class="card">
+            <div class="tr-card-head">
+              <h2>Die Fälle</h2>
+              <span class="hint" id="tr-cases-note"></span>
+            </div>
+            <div id="tr-cases"></div>
+          </div>
+
+          <div class="tr-two-up">
+            <div class="card">
+              <h2>Was zurückkommt</h2>
+              <p class="hint" style="margin:0 0 10px">Die nächsten 14 Tage.</p>
+              <div id="tr-forecast"></div>
+            </div>
+            <div class="card">
+              <h2>Diese Woche vs. deine beste</h2>
+              <div id="tr-week"></div>
+            </div>
+          </div>
 
           <div class="card">
             <h2>Dein Weg durch die Grammatik</h2>

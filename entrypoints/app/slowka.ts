@@ -26,7 +26,7 @@ const KIND_LABEL: Record<string, string> = {
 let lang = 'pl'
 let queue: VocabExercise[] = []
 let index = 0
-let attempts: { lemma: string; correct: boolean; nearMiss: boolean; ms: number }[] = []
+let attempts: { lemma: string; correct: boolean; nearMiss: boolean; ms: number; kind: string }[] = []
 let combo = 0
 let maxCombo = 0
 let startedAt = 0
@@ -141,6 +141,7 @@ function answer(value: string, btn?: HTMLButtonElement): void {
     correct: result.correct,
     nearMiss: result.nearMiss,
     ms: Date.now() - itemStartedAt,
+    kind: ex.kind,
   })
 
   if (result.correct) {
@@ -235,6 +236,24 @@ async function finish(): Promise<void> {
   }
   if (summary?.perfectDay) {
     notes.push(`<div class="tr-perfect">${icon('spark', 14)} Perfekter Tag — Grammatik <b>und</b> Vokabeln. +50 XP</div>`)
+  }
+  for (const q of summary?.questsCompleted ?? []) {
+    notes.push(
+      `<div class="tr-achievement">${icon('target', 16)}<span>` +
+      `<b>${esc(q.titleDe)}</b> — Wochenziel erledigt. +${q.xp} XP</span></div>`,
+    )
+  }
+  // What changed, the vocabulary version: which cards the scheduler now trusts
+  // you with, and which came back closer.
+  if (summary?.graduated > 0 || summary?.lapsed > 0) {
+    const parts: string[] = []
+    if (summary.graduated > 0) {
+      parts.push(`<b>${summary.graduated}</b> ${summary.graduated === 1 ? 'Wort sitzt' : 'Wörter sitzen'} besser`)
+    }
+    if (summary.lapsed > 0) {
+      parts.push(`<b>${summary.lapsed}</b> ${summary.lapsed === 1 ? 'kommt' : 'kommen'} früher zurück`)
+    }
+    notes.push(`<div class="hint">${parts.join(' · ')}</div>`)
   }
   if (summary?.dueTomorrow > 0) {
     const k = summary.dueTomorrow === 1 ? 'Karte kommt' : 'Karten kommen'
