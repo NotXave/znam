@@ -108,6 +108,11 @@ const TEXT_PAIRS: [fg: string, bg: string, min: number, what: string][] = [
   ['--on-ok', '--ok', 4.5, 'the label on a correct option, which is filled'],
   ['--on-bad', '--bad', 4.5, 'the label on a wrong option, which is filled'],
   ['--viz-tick', '--card', 3.0, 'chart axis labels'],
+  // Text sitting on a heat step — the case grid's percentages. `--muted` was
+  // 1.5:1 on the middle step here, which is what these tokens exist to fix.
+  ['--on-heat-1', '--heat-1', 4.5, 'a shaky case cell'],
+  ['--on-heat-2', '--heat-2', 4.5, 'a case cell in progress'],
+  ['--on-heat-4', '--heat-4', 4.5, 'a mastered case cell'],
 ]
 
 /** Non-text marks: icons, borders, chart series. 3.0 is the AA threshold. */
@@ -161,6 +166,7 @@ test('every theme defines the whole token set', () => {
     '--accent', '--accent-ink', '--on-accent', '--accent-soft',
     '--c-page', '--c-youtube', '--c-netflix',
     '--heat-1', '--heat-2', '--heat-3', '--heat-4',
+    '--on-heat-1', '--on-heat-2', '--on-heat-4',
     '--ok', '--bad', '--on-ok', '--on-bad', '--boss', '--shadow-pop',
   ]
   for (const theme of THEMES.filter(t => t !== 'midnight')) {
@@ -179,6 +185,16 @@ test('surfaces are ordered, so a card always reads as a layer', () => {
     // `raised`, which is a recessed tone on white rather than a lifted one.
     assert.ok(dark ? card > bg : card >= bg, `${theme}: --card does not separate from --bg`)
     assert.ok(Math.abs(card - raised) > 0.002, `${theme}: --raised is indistinguishable from --card`)
+  }
+})
+
+test('the heat ramp climbs monotonically, so it conveys an order', () => {
+  for (const theme of THEMES) {
+    const steps = ['--heat-0', '--heat-1', '--heat-2', '--heat-3', '--heat-4']
+      .map(t => luminance(resolve(theme, t)))
+    const rising = steps.every((l, i) => i === 0 || l > steps[i - 1])
+    const falling = steps.every((l, i) => i === 0 || l < steps[i - 1])
+    assert.ok(rising || falling, `${theme}: the heat ramp is not monotonic — ${steps.map(l => l.toFixed(3))}`)
   }
 })
 

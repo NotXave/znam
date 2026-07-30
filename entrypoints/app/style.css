@@ -71,6 +71,13 @@
   --heat-2: #7b6029;
   --heat-3: #a67d33;
   --heat-4: #c8963e;
+  /* Ink for text sitting ON a heat step. Which end of the ramp needs light ink
+     and which needs dark flips between a dark theme and a light one, so it
+     cannot be one value — and it cannot be `--muted`, which was 1.5:1 on the
+     middle steps and made the case grid's percentages unreadable. */
+  --on-heat-1: var(--n-9);
+  --on-heat-2: var(--n-9);
+  --on-heat-4: #14140f;
   --spark: var(--n-4);
   --spark-hover: var(--accent);
   --ok: #5f9e57;
@@ -108,6 +115,9 @@
   --heat-2: #d3b478;
   --heat-3: #ad8434;
   --heat-4: #8a5f1a;
+  --on-heat-1: var(--n-9);
+  --on-heat-2: var(--n-9);
+  --on-heat-4: #ffffff;
   --spark: var(--n-4);
   --ok: #3d7d37;
   --bad: #b8433a;
@@ -140,9 +150,14 @@
   --c-youtube: #d66d77;
   --c-netflix: #b48ead;
   --heat-1: #3f5570;
-  --heat-2: #52708f;
+  /* One step darker than Nord's natural mid-tone: at #52708f its own light ink
+     was 4.47:1, just under AA. */
+  --heat-2: #4b6784;
   --heat-3: #6a8bab;
   --heat-4: #81a1c1;
+  --on-heat-1: var(--n-9);
+  --on-heat-2: var(--n-9);
+  --on-heat-4: #2e3440;
   --spark: var(--n-4);
   --ok: #94ba7f;
   --bad: #db8891;
@@ -179,6 +194,9 @@
   --heat-2: #c39f6c;
   --heat-3: #a67744;
   --heat-4: #8b5e34;
+  --on-heat-1: var(--n-9);
+  --on-heat-2: var(--n-9);
+  --on-heat-4: #faf5ea;
   --spark: var(--n-4);
   --ok: #56753b;
   --bad: #a5462f;
@@ -1019,9 +1037,10 @@ button svg { vertical-align: -0.15em; }
 /* Never practised: a hairline outline with nothing in it, so the grid reads as
    "not yet" rather than as a form to fill in. */
 .tr-case-new { background: none; }
-.tr-case-shaky { background: var(--heat-1); }
-.tr-case-learning { background: var(--heat-2); }
-.tr-case-solid { background: var(--heat-4); color: var(--on-accent); border-color: var(--heat-4); }
+/* Each step brings its own ink — see --on-heat-* in the token block. */
+.tr-case-shaky { background: var(--heat-1); color: var(--on-heat-1); }
+.tr-case-learning { background: var(--heat-2); color: var(--on-heat-2); }
+.tr-case-solid { background: var(--heat-4); color: var(--on-heat-4); border-color: var(--heat-4); }
 .tr-case-absent { background: none; border-style: dashed; opacity: 0.5; }
 .tr-case-weak { outline: 1px solid var(--accent); outline-offset: 1px; }
 

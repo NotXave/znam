@@ -89,10 +89,29 @@ i+1 sweet spot.
   - **Spaced repetition over concepts**, not cards — grammar clicks all at once,
     so an SM-2-lite scheduler tracks 41 concepts in a prerequisite graph. A
     topic unlocks only when its prerequisites are both accurate *and* durable.
-  - **Made to come back to**: streaks with forgiveness (a banked freeze absorbs
-    one missed day), XP with a combo multiplier, ranks *Nowicjusz → Legenda*,
-    achievements, a boss round on your weakest topic, and Żubr the bison as
-    coach. No dependencies, no asset files — CSS animations and inline SVG.
+  - **Made to come back to.** The home screen answers *what should I do today*
+    and *what did yesterday accomplish*, not just *did you show up*:
+    - a **daily goal ring** that fills on minutes **or** items, whichever you
+      hit first, so a slow careful session and a fast confident one both finish
+      the day (both modes count toward it);
+    - **three weekly quests** generated from your own state and rerolled Monday
+      — *„Der Plural tut weh — drei verschiedene Fälle im Plural"*, *„Drei
+      Dauerbrenner erledigen"*, *„20-mal selbst getippt"*. A streak cannot name
+      the thing you have been avoiding; a quest can;
+    - a **7 × 2 case grid**, the table every Polish textbook uses, so *"I still
+      can't do the genitive plural"* is visible at a glance;
+    - a **review forecast** — 14 days of concepts and cards coming back due;
+    - a **session diff** on the summary: what you met for the first time, what
+      the scheduler now trusts you with (*„in 8 statt 3 Tagen"*), what came back
+      closer;
+    - a **badge shelf** with five three-tier ladders, derived from totals so
+      they always show the next rung rather than a bare unlocked flag;
+    - and **this week against your own best week** — no leaderboard, the
+      opponent is last-month-you.
+    Plus streaks with forgiveness (a banked freeze absorbs one missed day), XP
+    with a combo multiplier, ranks *Nowicjusz → Legenda*, a boss round on your
+    weakest topic, and Żubr the bison as coach. No dependencies and no asset
+    files: CSS animations, inline SVG icons, and a drawn Żubr.
 - **📚 Słówka — a vocabulary trainer for the words you keep getting wrong**
   (second mode on the Trening screen, with its own streak). znam already counts
   every time you look a word up; this drills exactly those. Cards come **only**
@@ -105,6 +124,12 @@ i+1 sweet spot.
 - **Stats dashboard** (app page → Stats) — words known, learning-stage
   distribution, new words per day over the last 30 days, and reading activity
   (pages/videos, how many sit in the 90–98 % "sweet spot").
+- **Four themes** (Midnight, Daylight, Nord, Sepia) sharing one set of design
+  tokens: a ten-step neutral ramp per theme plus a single accent, hairline
+  borders instead of shadows, and a real type scale in which Polish under study
+  gets its own display face. WCAG AA contrast across all four is asserted by
+  `npm test`, which parses the stylesheet — a near-monochrome palette is exactly
+  where contrast fails quietly.
 - **Bootstrap your knowledge** three ways (app page):
   - *Calibrate*: an adaptive ~25-item quiz estimates your vocabulary size with
     a 90 % credible interval. Some of the words are **invented** — plausible
